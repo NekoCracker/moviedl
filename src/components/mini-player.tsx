@@ -8,10 +8,10 @@ import { thumbnailUri } from '@/library/media-actions';
 import { usePlayback, usePlaybackTime } from '@/player/playback';
 import { colors, placeholderTint, radius } from '@/theme';
 
-// 画面下に出す再生中の表示。タップでプレイヤーを開く。
+// 画面下に出す再生中の表示。タップでプレイヤーを開く。一時停止中は × で閉じられる。
 // compact は iOS 26 のタブバーに収まる小さい表示（スクロールでタブバーが縮んだとき）
 export function MiniPlayer({ compact = false }: { compact?: boolean }) {
-  const { current, duration, isPlaying, togglePlay, next } = usePlayback();
+  const { current, duration, isPlaying, togglePlay, next, stop } = usePlayback();
   const currentTime = usePlaybackTime();
   if (!current) return null;
 
@@ -35,7 +35,12 @@ export function MiniPlayer({ compact = false }: { compact?: boolean }) {
       <Pressable accessibilityRole="button" accessibilityLabel={isPlaying ? '一時停止' : '再生'} onPress={togglePlay} hitSlop={6} style={styles.button}>
         <SymbolView name={isPlaying ? 'pause.fill' : 'play.fill'} tintColor={colors.text} size={20} />
       </Pressable>
-      {compact ? null : (
+      {/* 一時停止中は「次へ」の代わりに閉じるボタンを出し、表示ごと消せるようにする */}
+      {!isPlaying ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="再生を終了" onPress={stop} hitSlop={6} style={styles.button}>
+          <SymbolView name="xmark" tintColor={colors.text} size={18} />
+        </Pressable>
+      ) : compact ? null : (
         <Pressable accessibilityRole="button" accessibilityLabel="次へ" onPress={next} hitSlop={6} style={styles.button}>
           <SymbolView name="forward.fill" tintColor={colors.text} size={20} />
         </Pressable>
