@@ -12,6 +12,7 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { migrateDbIfNeeded } from '@/db/schema';
+import { initAds } from '@/ads/download-ad';
 import { PlaybackProvider } from '@/player/playback';
 import { PaywallHost } from '@/premium/paywall';
 import { initPurchases } from '@/premium/purchases';
@@ -48,7 +49,8 @@ export default function RootLayout() {
   }, [ready]);
 
   useEffect(() => {
-    initPurchases();
+    // 購入状態が分かってから広告を準備する（プレミアムなら読み込まない）
+    initPurchases().then(initAds);
   }, []);
 
   if (!ready) {

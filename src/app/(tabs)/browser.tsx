@@ -29,6 +29,7 @@ import {
   type Bookmark,
   type BrowserTab,
 } from '@/db/browser';
+import { showDownloadAd } from '@/ads/download-ad';
 import { enqueueDownload, type DownloadOutput } from '@/db/downloads';
 import { runQueue } from '@/download/engine';
 import { colors, fonts, radius } from '@/theme';
@@ -246,7 +247,8 @@ export default function BrowserScreen() {
       Alert.alert('保存できません', 'このページの動画は保護（DRM）されているため保存できません。');
       return;
     }
-    // TODO: 無料版はここでインタースティシャル広告を表示する（feature-spec.md §3）
+    // 無料版はここで動画広告を出す（出せなければ5秒で諦めてそのまま保存する）
+    await showDownloadAd();
     await enqueueDownload(db, {
       sourceUrl: item.url,
       pageUrl: item.pageUrl,
