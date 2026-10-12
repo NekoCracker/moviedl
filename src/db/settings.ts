@@ -13,6 +13,8 @@ export type AppSettings = {
   mp3Bitrate: 128 | 192 | 320;
   // MP4 に変換するときの画質（ビットレート）
   convertQuality: 'high' | 'standard' | 'small';
+  // アプリを閉じているときにダウンロード完了を通知する
+  downloadNotifications: boolean;
 };
 
 const defaults: AppSettings = {
@@ -25,6 +27,7 @@ const defaults: AppSettings = {
   folderSort: 'manual',
   mp3Bitrate: 192,
   convertQuality: 'standard',
+  downloadNotifications: true,
 };
 
 export async function loadSettings(db: SQLiteDatabase): Promise<AppSettings> {

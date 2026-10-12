@@ -172,6 +172,9 @@ export default function SettingsScreen() {
         <Section title="保存">
           <Row label="MP4変換の画質" value={qualityLabels[settings.convertQuality]} onPress={chooseQuality} />
           <Row label="mp3の音質" value={`${settings.mp3Bitrate}kbps`} onPress={chooseMp3Bitrate} />
+          <Row label="ダウンロード完了の通知">
+            <Switch value={settings.downloadNotifications} onValueChange={(v) => update('downloadNotifications', v)} trackColor={{ true: colors.accent }} />
+          </Row>
         </Section>
 
         <Section title="ブラウザ">

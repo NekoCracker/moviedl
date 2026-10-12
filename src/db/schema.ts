@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 // フォルダ「未分類」の固定ID。削除不可。
 export const UNSORTED_FOLDER_ID = 1;
 
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 // SQLiteProvider の onInit から呼ばれる。PRAGMA user_version でスキーマの版を管理する。
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
@@ -124,6 +124,40 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     // ダウンロード中の一覧に、ページの動画のポスター画像を出す
     await db.execAsync('ALTER TABLE downloads ADD COLUMN poster_url TEXT');
     currentVersion = 2;
+  }
+
+  if (currentVersion === 2) {
+    // カメラロールから写真も追加できるようにする。SQLite は CHECK 制約を変えられないので表を作り直す。
+    // 作り直しの間に関連する行（変換など）が消えないよう、外部キーを止めてから行う
+    await db.execAsync('PRAGMA foreign_keys = OFF');
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        CREATE TABLE videos_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          folder_id INTEGER NOT NULL REFERENCES folders(id),
+          media_type TEXT NOT NULL CHECK (media_type IN ('video', 'audio', 'photo')),
+          title TEXT NOT NULL,
+          file_path TEXT NOT NULL,
+          thumbnail_path TEXT,
+          container TEXT,
+          duration_sec REAL,
+          size_bytes INTEGER,
+          source_page_url TEXT,
+          last_position_sec REAL NOT NULL DEFAULT 0,
+          last_played_at INTEGER,
+          manual_order INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL
+        );
+        INSERT INTO videos_new (id, folder_id, media_type, title, file_path, thumbnail_path, container, duration_sec, size_bytes,
+                                source_page_url, last_position_sec, last_played_at, manual_order, created_at)
+          SELECT id, folder_id, media_type, title, file_path, thumbnail_path, container, duration_sec, size_bytes,
+                 source_page_url, last_position_sec, last_played_at, manual_order, created_at FROM videos;
+        DROP TABLE videos;
+        ALTER TABLE videos_new RENAME TO videos;
+        CREATE INDEX idx_videos_folder ON videos(folder_id, media_type);
+      `);
+    });
+    currentVersion = 3;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

@@ -134,6 +134,14 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "カメラロールの動画や写真をフォルダに追加するために使用します。",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-tracking-transparency",
         {
           "userTrackingPermission": "許可すると、あなたに合った広告が表示されやすくなります。許可しなくても、すべての機能を使えます。"

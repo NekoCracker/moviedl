@@ -29,6 +29,8 @@ import { UNSORTED_FOLDER_ID } from '@/db/schema';
 import {
   deleteMediaItems,
   importFromFiles,
+  importFromPhotoLibrary,
+  photoPickerAvailable,
   NATIVE_VIDEO_CONTAINERS,
   queueConversion,
   saveToCameraRoll,
@@ -97,7 +99,7 @@ export default function FolderScreen() {
     const s = sortOptions[index];
     const [folderName, media] = await Promise.all([
       getFolderName(db, folderId),
-      listMedia(db, folderId, mediaType, { key: s.key, dir: s.dir }, search),
+      listMedia(db, folderId, mediaType, { key: s.key, dir: s.dir }, search, true),
     ]);
     setName(folderName ?? '');
     setItems(media);
@@ -217,7 +219,10 @@ export default function FolderScreen() {
       },
       { label: 'フォルダへ移動', run: () => chooseMoveTarget([item]) },
     ];
-    if (playback.current && playback.current.id !== item.id) {
+    if (item.mediaType === 'photo') {
+      actions.push({ label: '写真アプリに保存', run: () => copyToCameraRoll([item]) });
+    }
+    if (item.mediaType !== 'photo' && playback.current && playback.current.id !== item.id) {
       actions.unshift(
         { label: '次に再生', run: () => playback.playNext(item) },
         { label: 'キューの最後に追加', run: () => playback.addToQueue(item) },
@@ -267,6 +272,28 @@ export default function FolderScreen() {
       }
     });
 
+  const onImportPhotos = () => {
+    if (!photoPickerAvailable()) {
+      Alert.alert('次のビルドで使えます', 'カメラロールからの追加は、アプリを作り直したあとに使えるようになります。');
+      return;
+    }
+    return runBusy('取り込んでいます', async () => {
+      const result = await importFromPhotoLibrary(db, folderId === ALL_FOLDER_ID ? UNSORTED_FOLDER_ID : folderId);
+      if (result && result.skipped.length > 0) {
+        Alert.alert('取り込めなかったファイル', `対応していない形式のため取り込めませんでした。\n${result.skipped.join('\n')}`);
+      }
+    });
+  };
+
+  // 写真は写真の画面で、動画・音声はプレイヤーで開く
+  const openItem = (item: MediaItem) => {
+    if (item.mediaType === 'photo') {
+      router.push({ pathname: '/photo/[id]', params: { id: String(item.id), folderId: String(folderId) } });
+    } else {
+      openPlayer({ startId: item.id });
+    }
+  };
+
   const totalBytes = items.reduce((sum, item) => sum + (item.sizeBytes ?? 0), 0);
 
   const openPlayer = async (options: { startId?: number; shuffle?: boolean }) => {
@@ -313,6 +340,11 @@ export default function FolderScreen() {
           </Pressable>
         )}
         <View style={styles.navRight}>
+          {selection || mediaType !== 'video' ? null : (
+            <Pressable accessibilityRole="button" accessibilityLabel="カメラロールから追加" onPress={onImportPhotos} style={styles.iconButton}>
+              <SymbolView name="photo.on.rectangle" tintColor={colors.accent} size={20} />
+            </Pressable>
+          )}
           {selection ? null : (
             <Pressable accessibilityRole="button" accessibilityLabel="ファイルから取り込む" onPress={onImport} style={styles.iconButton}>
               <SymbolView name="square.and.arrow.down" tintColor={colors.accent} size={20} />
@@ -343,8 +375,8 @@ export default function FolderScreen() {
         <Pressable
           accessibilityRole="button"
           style={[styles.actionButton, styles.primaryAction]}
-          disabled={items.length === 0}
-          onPress={() => openPlayer({ startId: items[0]?.id })}>
+          disabled={!items.some((i) => i.mediaType !== 'photo')}
+          onPress={() => openPlayer({ startId: items.find((i) => i.mediaType !== 'photo')?.id })}>
           <SymbolView name="play.fill" tintColor={colors.onAccent} size={16} />
           <AppText variant="bodyBold" tone="onAccent">
             再生
@@ -353,7 +385,7 @@ export default function FolderScreen() {
         <Pressable
           accessibilityRole="button"
           style={styles.actionButton}
-          disabled={items.length === 0}
+          disabled={!items.some((i) => i.mediaType !== 'photo')}
           onPress={() => openPlayer({ shuffle: true })}>
           <SymbolView name="shuffle" tintColor={colors.text} size={16} />
           <AppText variant="bodyBold">シャッフル</AppText>
@@ -384,14 +416,14 @@ export default function FolderScreen() {
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <AppText variant="caption" tone="secondary" style={styles.empty}>
-            {search ? '一致するものがありません' : 'まだ何もありません。ブラウザから保存するか、右上のボタンからファイルを取り込んでください。'}
+            {search ? '一致するものがありません' : 'まだ何もありません。ブラウザから保存するか、右上のボタンからカメラロールやファイルを取り込んでください。'}
           </AppText>
         }
         renderItem={({ item }) => (
           <MediaRow
             item={item}
             selected={selection ? selection.has(item.id) : undefined}
-            onPress={() => (selection ? toggleSelected(item.id) : openPlayer({ startId: item.id }))}
+            onPress={() => (selection ? toggleSelected(item.id) : openItem(item))}
             onLongPress={() => (selection ? toggleSelected(item.id) : itemMenu(item))}
             onMore={() => itemMenu(item)}
           />
@@ -456,7 +488,7 @@ function MediaRow({
   onMore: () => void;
 }) {
   const progress = item.durationSec ? Math.min(1, item.lastPositionSec / item.durationSec) : 0;
-  const meta = [item.container?.toUpperCase(), item.sizeBytes ? formatBytes(item.sizeBytes) : null]
+  const meta = [item.mediaType === 'photo' ? '写真' : null, item.container?.toUpperCase(), item.sizeBytes ? formatBytes(item.sizeBytes) : null]
     .filter(Boolean)
     .join('・');
   const thumb = thumbnailUri(item.thumbnailPath);
@@ -484,9 +516,11 @@ function MediaRow({
             <SymbolView name="music.note" tintColor={colors.text} size={22} />
           </View>
         ) : null}
-        <View style={styles.duration}>
-          <AppText variant="small">{formatDuration(item.durationSec)}</AppText>
-        </View>
+        {item.mediaType === 'photo' ? null : (
+          <View style={styles.duration}>
+            <AppText variant="small">{formatDuration(item.durationSec)}</AppText>
+          </View>
+        )}
         {progress > 0 ? <View style={[styles.progress, { width: `${progress * 100}%` }]} /> : null}
       </View>
       <View style={styles.rowText}>

@@ -2,7 +2,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { UNSORTED_FOLDER_ID } from './schema';
 
-export type MediaType = 'video' | 'audio';
+// photo はカメラロールから追加した写真。「動画」の一覧に一緒に並ぶ（再生の対象にはならない）
+export type MediaType = 'video' | 'audio' | 'photo';
 
 export type FolderSummary = {
   id: number;
@@ -50,14 +51,14 @@ export async function listFolders(db: SQLiteDatabase, mediaType: MediaType): Pro
             COUNT(v.id) AS item_count,
             SUM(v.size_bytes) AS total_bytes,
             (SELECT thumbnail_path FROM videos
-              WHERE folder_id = f.id AND media_type = ? AND thumbnail_path IS NOT NULL
+              WHERE folder_id = f.id AND media_type IN (?, ?) AND thumbnail_path IS NOT NULL
               ORDER BY created_at DESC LIMIT 1) AS cover_thumbnail
        FROM folders f
-       LEFT JOIN videos v ON v.folder_id = f.id AND v.media_type = ?
+       LEFT JOIN videos v ON v.folder_id = f.id AND v.media_type IN (?, ?)
       GROUP BY f.id
       ORDER BY f.is_system DESC, f.sort_order ASC, f.id ASC`,
-    mediaType,
-    mediaType,
+    ...typesFor(mediaType),
+    ...typesFor(mediaType),
   );
   return rows.map((r) => ({
     id: r.id,
@@ -132,15 +133,23 @@ type MediaRow = {
   created_at: number;
 };
 
+// 「動画」の一覧（フォルダの数・表紙）には写真も含める
+function typesFor(mediaType: MediaType): [MediaType, MediaType] {
+  return mediaType === 'video' ? ['video', 'photo'] : [mediaType, mediaType];
+}
+
+// includePhotos: 「動画」の一覧に写真も並べる（再生キューを作るときは false）
 export async function listMedia(
   db: SQLiteDatabase,
   folderId: number,
   mediaType: MediaType,
   sort: { key: SortKey; dir: SortDir },
   search = '',
+  includePhotos = false,
 ): Promise<MediaItem[]> {
-  const where = ['media_type = ?'];
-  const params: (string | number)[] = [mediaType];
+  const types = includePhotos ? typesFor(mediaType) : [mediaType, mediaType];
+  const where = ['media_type IN (?, ?)'];
+  const params: (string | number)[] = [...types];
   if (folderId !== ALL_FOLDER_ID) {
     where.push('folder_id = ?');
     params.push(folderId);
@@ -273,7 +282,8 @@ export async function setFolderSort(db: SQLiteDatabase, folderId: number, sort: 
 // ---- 動画の手動並び替え ----
 
 export async function moveMediaManual(db: SQLiteDatabase, folderId: number, mediaType: MediaType, id: number, direction: -1 | 1) {
-  const items = await listMedia(db, folderId, mediaType, { key: 'manual_order', dir: 'asc' });
+  // 一覧に見えている順（動画の一覧なら写真も含む）で入れ替える
+  const items = await listMedia(db, folderId, mediaType, { key: 'manual_order', dir: 'asc' }, '', true);
   const index = items.findIndex((m) => m.id === id);
   const target = index + direction;
   if (index < 0 || target < 0 || target >= items.length) return;

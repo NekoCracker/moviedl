@@ -74,6 +74,7 @@ export default function RootLayout() {
                 options={{ presentation: 'modal', contentStyle: { backgroundColor: '#000' } }}
               />
               <Stack.Screen name="edit/[id]" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="photo/[id]" options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: '#000' } }} />
               <Stack.Screen name="licenses" options={{ presentation: 'modal' }} />
             </Stack>
             <PaywallHost />

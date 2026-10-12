@@ -126,8 +126,8 @@ async function processJob(db: SQLiteDatabase, job: JobRow) {
     const videoId = await registerMedia(db, job, result);
     await db.runAsync("UPDATE downloads SET status = 'done', progress = 1, video_id = ? WHERE id = ?", videoId, job.id);
     removeTempDirectory(job.id);
-    // 音声のみ・MPEG-TS は続けて変換するので、通知は変換が終わったときに出す
-    if (job.output === 'video' && result.container !== 'ts') {
+    // 変換の通知は出さないので、続けて変換するもの（音声のみ・HLS）もここで知らせる
+    if ((await loadSettings(db)).downloadNotifications) {
       notifyFinished('ダウンロードが完了しました', job.title ?? '動画を保存しました');
     }
   } catch (e) {

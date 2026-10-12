@@ -1,5 +1,6 @@
 // 保存済み動画への操作: 削除・カメラロールへコピー・ファイルからの取り込み・サムネイル作成・変換の予約
 import * as DocumentPicker from 'expo-document-picker';
+import { requireOptionalNativeModule } from 'expo';
 import { Directory, File } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -15,6 +16,7 @@ export const NATIVE_VIDEO_CONTAINERS = ['mp4', 'm4v', 'mov'];
 export const NATIVE_CONTAINERS = [...NATIVE_VIDEO_CONTAINERS, 'm4a', 'mp3'];
 const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'aac', 'wav', 'aif', 'aiff', 'flac', 'ogg', 'opus', 'caf'];
 const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'flv', 'avi', 'ts', 'wmv', '3gp', 'mpg', 'mpeg'];
+const PHOTO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'heic', 'heif', 'gif', 'webp'];
 
 const THUMBS_DIR = 'thumbs';
 
@@ -58,7 +60,9 @@ export async function deleteMediaItems(db: SQLiteDatabase, items: MediaItem[]) {
 export type CameraRollResult = { saved: number; needsConversion: MediaItem[] };
 
 export async function saveToCameraRoll(items: MediaItem[]): Promise<CameraRollResult> {
-  const savable = items.filter((i) => i.mediaType === 'video' && NATIVE_VIDEO_CONTAINERS.includes(i.container ?? ''));
+  const savable = items.filter(
+    (i) => i.mediaType === 'photo' || (i.mediaType === 'video' && NATIVE_VIDEO_CONTAINERS.includes(i.container ?? '')),
+  );
   const needsConversion = items.filter((i) => i.mediaType === 'video' && !savable.includes(i));
   if (savable.length === 0) return { saved: 0, needsConversion };
 
@@ -102,7 +106,7 @@ export async function createThumbnail(
   item: Pick<MediaItem, 'id' | 'filePath' | 'container' | 'thumbnailPath'> & { mediaType?: MediaType },
   timeSec = 1,
 ): Promise<string | null> {
-  if (item.mediaType === 'audio') return null;
+  if (item.mediaType === 'audio' || item.mediaType === 'photo') return null;
   // 同じ名前だと expo-image のキャッシュで古い画像が出るので、作るたびに名前を変える
   const rel = `${THUMBS_DIR}/${item.id}-${Date.now()}.jpg`;
   thumbsDirectory();
@@ -160,17 +164,53 @@ export async function importFromFiles(db: SQLiteDatabase, folderId: number, pref
   return importFiles(db, folderId, picked.assets);
 }
 
-// 一時ファイル（キャッシュ内）をライブラリに移して登録する。ファイルピッカーと「このアプリで開く」で共通
+// カメラロールから動画・写真を選んで取り込む（iOS の写真ピッカー。写真全体へのアクセス許可は求めない）
+// 2026-10-12 以前の開発ビルドには写真ピッカーが入っていないので、使う時点で読み込む（入っていなければ null）
+export function photoPickerAvailable(): boolean {
+  return requireOptionalNativeModule('ExponentImagePicker') != null;
+}
+
+export async function importFromPhotoLibrary(db: SQLiteDatabase, folderId: number): Promise<ImportResult | null> {
+  const ImagePicker = await import('expo-image-picker');
+  const picked = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images', 'videos'],
+    allowsMultipleSelection: true,
+    selectionLimit: 0,
+    quality: 1,
+    // 元の画質のまま受け取る（互換形式への変換をしない）
+    preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
+    videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
+  });
+  if (picked.canceled) return null;
+  return importFiles(
+    db,
+    folderId,
+    picked.assets.map((a, i) => ({
+      uri: a.uri,
+      name: a.fileName ?? `${a.type === 'video' ? 'video' : 'photo'}-${i}.${extensionOf(a.uri) || (a.type === 'video' ? 'mov' : 'jpg')}`,
+      size: a.fileSize ?? null,
+      durationSec: a.type === 'video' && a.duration ? a.duration / 1000 : null,
+    })),
+  );
+}
+
+// 一時ファイル（キャッシュ内）をライブラリに移して登録する。ファイルピッカー・写真ピッカー・「このアプリで開く」で共通
 export async function importFiles(
   db: SQLiteDatabase,
   folderId: number,
-  assets: { uri: string; name: string; size?: number | null }[],
+  assets: { uri: string; name: string; size?: number | null; durationSec?: number | null }[],
 ): Promise<ImportResult> {
   let imported = 0;
   const skipped: string[] = [];
   for (const [index, asset] of assets.entries()) {
     const ext = extensionOf(asset.name);
-    const mediaType: MediaType | null = AUDIO_EXTENSIONS.includes(ext) ? 'audio' : VIDEO_EXTENSIONS.includes(ext) ? 'video' : null;
+    const mediaType: MediaType | null = AUDIO_EXTENSIONS.includes(ext)
+      ? 'audio'
+      : VIDEO_EXTENSIONS.includes(ext)
+        ? 'video'
+        : PHOTO_EXTENSIONS.includes(ext)
+          ? 'photo'
+          : null;
     if (!mediaType) {
       skipped.push(asset.name);
       continue;
@@ -180,13 +220,16 @@ export async function importFiles(
     source.move(mediaFile(fileName));
     const title = asset.name.replace(/\.[^.]+$/, '') || '無題';
     const result = await db.runAsync(
-      `INSERT INTO videos (folder_id, media_type, title, file_path, container, size_bytes, manual_order, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO videos (folder_id, media_type, title, file_path, thumbnail_path, container, duration_sec, size_bytes, manual_order, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       folderId,
       mediaType,
       title.slice(0, 100),
       fileName,
+      // 写真はそのものを一覧の画像に使う
+      mediaType === 'photo' ? fileName : null,
       ext,
+      asset.durationSec ?? null,
       asset.size ?? mediaFile(fileName).size ?? null,
       await nextManualOrder(db, folderId),
       Date.now(),
