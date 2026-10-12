@@ -32,6 +32,7 @@ import {
   saveToCameraRoll,
   thumbnailUri,
 } from '@/library/media-actions';
+import { runConversions } from '@/convert/engine';
 import { usePlayback } from '@/player/playback';
 import { requirePremium } from '@/premium/store';
 import { folderUnlock } from '@/security/folder-unlock';
@@ -190,6 +191,7 @@ export default function FolderScreen() {
   const queue = (item: MediaItem, kind: 'mp4' | 'm4a' | 'mp3') =>
     runBusy('', async () => {
       const added = await queueConversion(db, item.id, kind, kind === 'mp3' ? { bitrate: 192 } : {});
+      runConversions(db);
       Alert.alert(added ? '変換を開始しました' : 'すでに変換待ちです', '進み具合は「ダウンロード」タブで確認できます。');
     });
 

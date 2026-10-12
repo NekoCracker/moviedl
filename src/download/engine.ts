@@ -7,6 +7,7 @@ import type { DetectedKind } from '@/browser/detector';
 import { nextManualOrder } from '@/db/library';
 import { UNSORTED_FOLDER_ID } from '@/db/schema';
 import type { DownloadOutput } from '@/db/downloads';
+import { runConversions } from '@/convert/engine';
 import { createThumbnail } from '@/library/media-actions';
 import { parsePlaylist, pickVariant, type HlsMediaPlaylist } from './hls';
 import { mediaFile, removeTempDirectory, tempDirectory } from './storage';
@@ -254,15 +255,19 @@ async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadRe
     // サムネイルが作れなくても保存は成功扱い
   });
 
-  // 音声のみの保存や、iOSで直接再生できない形式は変換待ちに積む（変換はネイティブモジュールで実装予定）
+  // 音声のみの保存と、MPEG-TS（HLSの一部）はMP4への変換に回す。WebM などはそのまま VLC で再生する
   const conversion = job.output === 'm4a' || job.output === 'mp3' ? job.output : result.container === 'ts' ? 'mp4' : null;
   if (conversion) {
+    // 「音声のみ」で保存したものは、音声を書き出したあと元の動画を消す
+    const params = conversion === 'mp4' ? {} : { removeSource: true, bitrate: 192 };
     await db.runAsync(
-      "INSERT INTO conversions (video_id, kind, status, created_at) VALUES (?, ?, 'pending', ?)",
+      "INSERT INTO conversions (video_id, kind, params_json, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
       videoId,
       conversion,
+      JSON.stringify(params),
       Date.now(),
     );
+    runConversions(db);
   }
   return videoId;
 }

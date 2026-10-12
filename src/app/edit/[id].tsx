@@ -13,6 +13,7 @@ import { getMediaByIds, type MediaItem } from '@/db/library';
 import { mediaFile } from '@/download/storage';
 import { createThumbnail, NATIVE_VIDEO_CONTAINERS, queueConversion } from '@/library/media-actions';
 import { seekTo } from '@/player/controls';
+import { runConversions } from '@/convert/engine';
 import { usePlayback } from '@/player/playback';
 import { colors, radius } from '@/theme';
 import { formatDuration } from '@/utils/format';
@@ -106,6 +107,7 @@ export default function EditScreen() {
         if (i > 1) return;
         // 書き出しはネイティブの変換キューで行う（区間ごとに保存し、中断しても再開できる。feature-spec.md §2-12）
         await queueConversion(db, item.id, 'trim', { start, end, replace: i === 1 });
+        runConversions(db);
         Alert.alert('トリミングを開始しました', '進み具合は「ダウンロード」タブで確認できます。');
         router.back();
       },

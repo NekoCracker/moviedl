@@ -71,7 +71,10 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
         params_json TEXT NOT NULL DEFAULT '{}',
         total_chunks INTEGER NOT NULL DEFAULT 0,
         done_chunks INTEGER NOT NULL DEFAULT 0,
+        -- pending / running / paused / done / error
         status TEXT NOT NULL,
+        progress REAL NOT NULL DEFAULT 0,
+        error TEXT,
         created_at INTEGER NOT NULL
       );
 

@@ -17,6 +17,7 @@ import { PlaybackProvider } from '@/player/playback';
 import { PaywallHost } from '@/premium/paywall';
 import { initPurchases } from '@/premium/purchases';
 import { AppLockGate } from '@/security/app-lock';
+import { watchConversions } from '@/convert/engine';
 import { runQueue } from '@/download/engine';
 import { colors } from '@/theme';
 
@@ -86,6 +87,7 @@ function ResumeDownloads() {
   const db = useSQLiteContext();
   useEffect(() => {
     runQueue(db);
+    watchConversions(db);
   }, [db]);
   return null;
 }
