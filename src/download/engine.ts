@@ -1,6 +1,7 @@
 // ダウンロードの実行エンジン。DBの downloads テーブルを待ち行列として、1件ずつ順番に処理する。
 // DRM・暗号化されたHLSは中止し 'blocked' にする（feature-spec.md §0）。
 import { File, type DownloadTask } from 'expo-file-system';
+import { AppState } from 'react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { DetectedKind } from '@/browser/detector';
@@ -35,6 +36,21 @@ let running = false;
 let currentJobId: number | null = null;
 let currentTask: DownloadTask | null = null;
 let stopRequest: 'pause' | 'cancel' | null = null;
+let queueDb: SQLiteDatabase | null = null;
+// 処理中にアプリが裏に回ったか。iOS はしばらくすると通信を切るので、そのときの失敗はエラーにせず、前面に戻ってから続ける
+let wentBackground = false;
+let interrupted = false;
+
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    if (interrupted && queueDb) {
+      interrupted = false;
+      runQueue(queueDb);
+    }
+  } else if (state === 'background' && currentJobId !== null) {
+    wentBackground = true;
+  }
+});
 
 function headersFor(job: JobRow): Record<string, string> {
   return job.page_url ? { Referer: job.page_url } : {};
@@ -58,10 +74,12 @@ function checkStop() {
 
 // 待ち行列を処理する。すでに動いていれば何もしない。
 export async function runQueue(db: SQLiteDatabase) {
+  queueDb = db;
   if (running) return;
   running = true;
   try {
     for (;;) {
+      if (interrupted) break;
       const job = await db.getFirstAsync<JobRow>(
         "SELECT * FROM downloads WHERE status IN ('queued', 'downloading') ORDER BY created_at ASC LIMIT 1",
       );
@@ -101,6 +119,7 @@ export async function cancelJob(db: SQLiteDatabase, id: number) {
 async function processJob(db: SQLiteDatabase, job: JobRow) {
   currentJobId = job.id;
   stopRequest = null;
+  wentBackground = AppState.currentState === 'background';
   await setStatus(db, job.id, 'downloading');
   try {
     const result = job.kind === 'hls' ? await downloadHls(job) : await downloadFile(job);
@@ -120,6 +139,10 @@ async function processJob(db: SQLiteDatabase, job: JobRow) {
       } else {
         await setStatus(db, job.id, 'paused');
       }
+    } else if (wentBackground || AppState.currentState !== 'active') {
+      // アプリを切り替えたことで通信が切れた。待機に戻し、前面に戻ったら落とし終えた区間の続きから再開する
+      interrupted = true;
+      await setStatus(db, job.id, 'queued');
     } else if (e instanceof BlockedError) {
       await setStatus(db, job.id, 'blocked', { error: e.message });
       removeTempDirectory(job.id);
@@ -223,7 +246,7 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
       const target = new File(temp, part.name);
       if (target.exists) continue;
       const partial = new File(temp, `${part.name}.part`);
-      await File.downloadFileAsync(part.url, partial, { headers: headersFor(job), idempotent: true });
+      await downloadWithRetry(part.url, partial, job);
       partial.move(target);
       done++;
       bytes += target.size;
@@ -248,6 +271,20 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
     handle.close();
   }
   return { fileName, container, sizeBytes: output.size, durationSec: playlist.totalDurationSec };
+}
+
+// 一時的な通信の途切れで全体を失敗にしないよう、区間ごとに数回やり直す
+async function downloadWithRetry(url: string, dest: File, job: JobRow) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await File.downloadFileAsync(url, dest, { headers: headersFor(job), idempotent: true });
+      return;
+    } catch (e) {
+      checkStop();
+      if (attempt >= 2 || wentBackground || AppState.currentState !== 'active') throw e;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
+  }
 }
 
 async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadResult): Promise<number> {
