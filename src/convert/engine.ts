@@ -239,8 +239,14 @@ async function convertWithChunks(
 
   // 画質の設定。標準は mt_core の自動設定と同じ値で、高画質は1.5倍、省容量は0.6倍
   const { convertQuality } = await loadSettings(db);
+  // ただし元の動画の1秒あたりの量より多くしても画質は上がらず容量が増えるだけなので、元の動画に合わせて抑える
+  const audioBitrate = (params.bitrate ?? 192) * 1000;
+  const sourceBitrate = item.sizeBytes && probe.durationSec > 0 ? (item.sizeBytes * 8) / probe.durationSec : 0;
+  const sourceVideoBitrate = sourceBitrate > 0 ? Math.max(300_000, sourceBitrate - (probe.hasAudio ? audioBitrate : 0)) : Infinity;
   const videoBitrate =
-    mode === 'mp4' && probe.hasVideo ? Math.round(baseVideoBitrate(probe.height) * qualityFactor[convertQuality]) : 0;
+    mode === 'mp4' && probe.hasVideo
+      ? Math.round(Math.min(baseVideoBitrate(probe.height) * qualityFactor[convertQuality], sourceVideoBitrate))
+      : 0;
 
   const run = async (options: ConvertOptions, onFraction: (f: number) => void) => {
     const sub = MediaTools!.addListener('onConvertProgress', (e) => {
