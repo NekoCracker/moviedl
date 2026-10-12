@@ -157,7 +157,11 @@ export async function listMedia(
     `SELECT * FROM videos WHERE ${where.join(' AND ')} ORDER BY ${sortColumns[sort.key]} ${dir}, id DESC`,
     ...params,
   );
-  return rows.map((r) => ({
+  return rows.map(toMediaItem);
+}
+
+function toMediaItem(r: MediaRow): MediaItem {
+  return {
     id: r.id,
     folderId: r.folder_id,
     mediaType: r.media_type,
@@ -169,7 +173,7 @@ export async function listMedia(
     sizeBytes: r.size_bytes,
     lastPositionSec: r.last_position_sec,
     createdAt: r.created_at,
-  }));
+  };
 }
 
 export async function renameMedia(db: SQLiteDatabase, id: number, title: string) {
@@ -201,4 +205,99 @@ export async function savePlaybackPosition(db: SQLiteDatabase, id: number, posit
     Date.now(),
     id,
   );
+}
+
+// ---- フォルダの並び替え ----
+
+export type FolderSort = 'manual' | 'name' | 'created';
+
+export async function listFoldersSorted(db: SQLiteDatabase, mediaType: MediaType, sort: FolderSort): Promise<FolderSummary[]> {
+  const list = await listFolders(db, mediaType);
+  if (sort === 'manual') return list;
+  const system = list.filter((f) => f.isSystem);
+  const rest = list.filter((f) => !f.isSystem);
+  if (sort === 'name') {
+    rest.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  } else {
+    rest.sort((a, b) => b.id - a.id);
+  }
+  return [...system, ...rest];
+}
+
+// 手動並び替え: 隣のフォルダと入れ替える（システムフォルダは動かさない）
+export async function moveFolder(db: SQLiteDatabase, folderId: number, direction: -1 | 1) {
+  const rows = await db.getAllAsync<{ id: number }>(
+    'SELECT id FROM folders WHERE is_system = 0 ORDER BY sort_order ASC, id ASC',
+  );
+  const index = rows.findIndex((r) => r.id === folderId);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= rows.length) return;
+  [rows[index], rows[target]] = [rows[target], rows[index]];
+  await db.withTransactionAsync(async () => {
+    for (let i = 0; i < rows.length; i++) {
+      await db.runAsync('UPDATE folders SET sort_order = ? WHERE id = ?', i + 1, rows[i].id);
+    }
+  });
+}
+
+export async function setFolderHasPasscode(db: SQLiteDatabase, folderId: number, hasPasscode: boolean) {
+  await db.runAsync('UPDATE folders SET has_passcode = ? WHERE id = ? AND is_system = 0', hasPasscode ? 1 : 0, folderId);
+}
+
+export async function folderHasPasscode(db: SQLiteDatabase, folderId: number): Promise<boolean> {
+  const row = await db.getFirstAsync<{ has_passcode: number }>('SELECT has_passcode FROM folders WHERE id = ?', folderId);
+  return row?.has_passcode === 1;
+}
+
+// フォルダごとに動画の並び順を記憶する（「すべて」は settings に保存）
+export async function getFolderSort(db: SQLiteDatabase, folderId: number): Promise<{ key: SortKey; dir: SortDir }> {
+  if (folderId === ALL_FOLDER_ID) {
+    const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key = 'allFolderSort'");
+    return row ? (JSON.parse(row.value) as { key: SortKey; dir: SortDir }) : { key: 'created_at', dir: 'desc' };
+  }
+  const row = await db.getFirstAsync<{ sort_key: SortKey; sort_dir: SortDir }>('SELECT sort_key, sort_dir FROM folders WHERE id = ?', folderId);
+  return row ? { key: row.sort_key, dir: row.sort_dir } : { key: 'created_at', dir: 'desc' };
+}
+
+export async function setFolderSort(db: SQLiteDatabase, folderId: number, sort: { key: SortKey; dir: SortDir }) {
+  if (folderId === ALL_FOLDER_ID) {
+    await db.runAsync(
+      "INSERT INTO settings (key, value) VALUES ('allFolderSort', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      JSON.stringify(sort),
+    );
+    return;
+  }
+  await db.runAsync('UPDATE folders SET sort_key = ?, sort_dir = ? WHERE id = ?', sort.key, sort.dir, folderId);
+}
+
+// ---- 動画の手動並び替え ----
+
+export async function moveMediaManual(db: SQLiteDatabase, folderId: number, mediaType: MediaType, id: number, direction: -1 | 1) {
+  const items = await listMedia(db, folderId, mediaType, { key: 'manual_order', dir: 'asc' });
+  const index = items.findIndex((m) => m.id === id);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= items.length) return;
+  [items[index], items[target]] = [items[target], items[index]];
+  await db.withTransactionAsync(async () => {
+    for (let i = 0; i < items.length; i++) {
+      await db.runAsync('UPDATE videos SET manual_order = ? WHERE id = ?', i + 1, items[i].id);
+    }
+  });
+}
+
+export async function getMediaByIds(db: SQLiteDatabase, ids: number[]): Promise<MediaItem[]> {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = await db.getAllAsync<MediaRow>(`SELECT * FROM videos WHERE id IN (${placeholders})`, ...ids);
+  return rows.map(toMediaItem);
+}
+
+export async function saveMediaDuration(db: SQLiteDatabase, id: number, durationSec: number) {
+  await db.runAsync('UPDATE videos SET duration_sec = ? WHERE id = ? AND duration_sec IS NULL', durationSec, id);
+}
+
+// 新しく保存・取り込みした動画は、手動並びの末尾に置く
+export async function nextManualOrder(db: SQLiteDatabase, folderId: number): Promise<number> {
+  const row = await db.getFirstAsync<{ m: number | null }>('SELECT MAX(manual_order) AS m FROM videos WHERE folder_id = ?', folderId);
+  return (row?.m ?? 0) + 1;
 }

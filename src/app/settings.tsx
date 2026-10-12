@@ -10,14 +10,13 @@ import { AppText } from '@/components/app-text';
 import { chooseHistoryRange } from '@/components/browser/bookmarks-sheet';
 import { PasscodePad } from '@/components/passcode-pad';
 import { clearHistory } from '@/db/browser';
+import { MANAGE_SUBSCRIPTIONS_URL, PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { loadSettings, saveSetting, type AppSettings } from '@/db/settings';
+import { purchasesAvailable, restore } from '@/premium/purchases';
+import { openPaywall, usePremium } from '@/premium/store';
 import { appPasscode } from '@/security/passcode';
 import { colors, radius } from '@/theme';
 
-// TODO: 公開前に本番の連絡先とURLに差し替える
-const SUPPORT_EMAIL = '[サポート用メールアドレス]';
-const TERMS_URL = '[利用規約のURL]';
-const PRIVACY_URL = '[プライバシーポリシーのURL]';
 
 const lockTimings: { value: AppSettings['lockAfterSec']; label: string }[] = [
   { value: 0, label: 'すぐに' },
@@ -29,6 +28,7 @@ export default function SettingsScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const isPremium = usePremium();
   const [passcodeFlow, setPasscodeFlow] = useState<null | { step: 'enter' | 'confirm'; first?: string; error?: string }>(null);
 
   const load = useCallback(async () => setSettings(await loadSettings(db)), [db]);
@@ -83,6 +83,22 @@ export default function SettingsScreen() {
     });
   };
 
+  const onRestore = async () => {
+    if (!purchasesAvailable()) {
+      Alert.alert('復元できません', 'App Storeに接続できませんでした。');
+      return;
+    }
+    try {
+      const ok = await restore();
+      Alert.alert(
+        ok ? '復元しました' : '復元できる購入がありません',
+        ok ? 'プレミアムが有効になりました。' : '購入時と同じApple IDでサインインしているか確認してください。',
+      );
+    } catch (e) {
+      Alert.alert('復元できませんでした', e instanceof Error ? e.message : String(e));
+    }
+  };
+
   if (!settings) return <View style={styles.screen} />;
   const timingLabel = lockTimings.find((t) => t.value === settings.lockAfterSec)?.label ?? '';
 
@@ -92,6 +108,16 @@ export default function SettingsScreen() {
         設定
       </AppText>
       <ScrollView contentContainerStyle={styles.content}>
+        <Section title="プレミアム">
+          {isPremium ? (
+            <Row label="プレミアム" value="利用中" />
+          ) : (
+            <Row label="プレミアムにアップグレード" onPress={() => openPaywall('settings')} />
+          )}
+          <Row label="購入を復元" onPress={onRestore} />
+          <Row label="サブスクリプションの管理" onPress={() => Linking.openURL(MANAGE_SUBSCRIPTIONS_URL)} />
+        </Section>
+
         <Section title="プライバシー">
           <Row label="パスコードロック">
             <Switch value={settings.appLockEnabled} onValueChange={toggleAppLock} trackColor={{ true: colors.accent }} />

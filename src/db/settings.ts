@@ -7,6 +7,8 @@ export type AppSettings = {
   lockAfterSec: 0 | 60 | 300;
   backgroundVideoAudio: boolean;
   rememberPlaybackRate: boolean;
+  lastPlaybackRate: number;
+  folderSort: 'manual' | 'name' | 'created';
 };
 
 const defaults: AppSettings = {
@@ -15,6 +17,8 @@ const defaults: AppSettings = {
   lockAfterSec: 0,
   backgroundVideoAudio: true,
   rememberPlaybackRate: true,
+  lastPlaybackRate: 1,
+  folderSort: 'manual',
 };
 
 export async function loadSettings(db: SQLiteDatabase): Promise<AppSettings> {

@@ -240,7 +240,7 @@ export default function BrowserScreen() {
     if (wasActive) showTab(list.find((t) => t.isActive) ?? null);
   };
 
-  const onDownload = async (item: DetectedMedia, output: DownloadOutput) => {
+  const onDownload = async (item: DetectedMedia, output: DownloadOutput, folderId: number) => {
     setSheetVisible(false);
     if (drmPage) {
       Alert.alert('保存できません', 'このページの動画は保護（DRM）されているため保存できません。');
@@ -253,6 +253,7 @@ export default function BrowserScreen() {
       title: item.pageTitle,
       kind: item.kind,
       output,
+      folderId,
     });
     runQueue(db);
     Alert.alert('ダウンロードに追加しました', item.pageTitle);

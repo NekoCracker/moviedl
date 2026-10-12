@@ -1,10 +1,14 @@
+import { useSQLiteContext } from 'expo-sqlite';
+import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActionSheetIOS, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import type { DetectedMedia } from '@/browser/detector';
 import type { DownloadOutput } from '@/db/downloads';
+import { listFolders } from '@/db/library';
+import { UNSORTED_FOLDER_ID } from '@/db/schema';
 import { colors, placeholderTint, radius } from '@/theme';
 
 const outputOptions: { value: DownloadOutput; label: string }[] = [
@@ -22,9 +26,26 @@ export function DetectedSheet({
   visible: boolean;
   media: DetectedMedia[];
   onClose: () => void;
-  onDownload: (item: DetectedMedia, output: DownloadOutput) => void;
+  onDownload: (item: DetectedMedia, output: DownloadOutput, folderId: number) => void;
 }) {
+  const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
+  const [folder, setFolder] = useState({ id: UNSORTED_FOLDER_ID, name: '未分類' });
+
+  const chooseFolder = async () => {
+    const folders = await listFolders(db, 'video');
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: '保存先のフォルダ',
+        options: [...folders.map((f) => (f.hasPasscode ? `🔒 ${f.name}` : f.name)), 'キャンセル'],
+        cancelButtonIndex: folders.length,
+      },
+      (i) => {
+        const f = folders[i];
+        if (f) setFolder({ id: f.id, name: f.name });
+      },
+    );
+  };
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [output, setOutput] = useState<DownloadOutput>('video');
   const selected = media.find((m) => m.url === selectedUrl) ?? media[0];
@@ -85,10 +106,21 @@ export function DetectedSheet({
           })}
         </View>
 
+        <Pressable accessibilityRole="button" accessibilityLabel={`保存先、${folder.name}`} onPress={chooseFolder} style={styles.folderRow}>
+          <SymbolView name="folder" tintColor={colors.textSecondary} size={16} />
+          <AppText variant="body" tone="secondary" style={styles.folderLabel}>
+            保存先
+          </AppText>
+          <AppText variant="bodyBold" numberOfLines={1} style={styles.folderName}>
+            {folder.name}
+          </AppText>
+          <SymbolView name="chevron.right" tintColor={colors.textMuted} size={12} />
+        </Pressable>
+
         <Pressable
           accessibilityRole="button"
           disabled={!selected}
-          onPress={() => selected && onDownload(selected, output)}
+          onPress={() => selected && onDownload(selected, output, folder.id)}
           style={styles.downloadButton}>
           <AppText variant="bodyBold" tone="onAccent" style={styles.downloadLabel}>
             ダウンロード
@@ -146,6 +178,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modeSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  folderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40 },
+  folderLabel: { flexShrink: 0 },
+  folderName: { flex: 1, textAlign: 'right' },
   downloadButton: {
     height: 52,
     borderRadius: radius.lg,

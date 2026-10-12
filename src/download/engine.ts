@@ -4,8 +4,10 @@ import { File, type DownloadTask } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { DetectedKind } from '@/browser/detector';
+import { nextManualOrder } from '@/db/library';
 import { UNSORTED_FOLDER_ID } from '@/db/schema';
 import type { DownloadOutput } from '@/db/downloads';
+import { createThumbnail } from '@/library/media-actions';
 import { parsePlaylist, pickVariant, type HlsMediaPlaylist } from './hls';
 import { mediaFile, removeTempDirectory, tempDirectory } from './storage';
 import { notifyJobsChanged, setLiveProgress } from './store';
@@ -18,6 +20,7 @@ type JobRow = {
   kind: DetectedKind;
   quality: string | null;
   output: DownloadOutput;
+  folder_id: number | null;
 };
 
 class BlockedError extends Error {}
@@ -228,19 +231,28 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
 }
 
 async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadResult): Promise<number> {
+  // 保存先のフォルダがダウンロード中に削除されていたら「未分類」へ
+  const folder = job.folder_id
+    ? await db.getFirstAsync<{ id: number }>('SELECT id FROM folders WHERE id = ?', job.folder_id)
+    : null;
+  const folderId = folder?.id ?? UNSORTED_FOLDER_ID;
   const inserted = await db.runAsync(
-    `INSERT INTO videos (folder_id, media_type, title, file_path, container, duration_sec, size_bytes, source_page_url, created_at)
-     VALUES (?, 'video', ?, ?, ?, ?, ?, ?, ?)`,
-    UNSORTED_FOLDER_ID,
+    `INSERT INTO videos (folder_id, media_type, title, file_path, container, duration_sec, size_bytes, source_page_url, manual_order, created_at)
+     VALUES (?, 'video', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    folderId,
     job.title || '無題の動画',
     result.fileName,
     result.container,
     result.durationSec,
     result.sizeBytes,
     job.page_url,
+    await nextManualOrder(db, folderId),
     Date.now(),
   );
   const videoId = inserted.lastInsertRowId;
+  createThumbnail(db, { id: videoId, filePath: result.fileName, container: result.container, thumbnailPath: null }).catch(() => {
+    // サムネイルが作れなくても保存は成功扱い
+  });
 
   // 音声のみの保存や、iOSで直接再生できない形式は変換待ちに積む（変換はネイティブモジュールで実装予定）
   const conversion = job.output === 'm4a' || job.output === 'mp3' ? job.output : result.container === 'ts' ? 'mp4' : null;

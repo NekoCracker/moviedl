@@ -12,6 +12,8 @@ import { useEffect } from 'react';
 
 import { AppTabs } from '@/components/app-tabs';
 import { migrateDbIfNeeded } from '@/db/schema';
+import { PaywallHost } from '@/premium/paywall';
+import { initPurchases } from '@/premium/purchases';
 import { AppLockGate } from '@/security/app-lock';
 import { runQueue } from '@/download/engine';
 import { colors } from '@/theme';
@@ -44,6 +46,10 @@ export default function RootLayout() {
     }
   }, [ready]);
 
+  useEffect(() => {
+    initPurchases();
+  }, []);
+
   if (!ready) {
     return null;
   }
@@ -54,6 +60,7 @@ export default function RootLayout() {
         <StatusBar style="light" />
         <ResumeDownloads />
         <AppTabs />
+        <PaywallHost />
         <AppLockGate />
       </ThemeProvider>
     </SQLiteProvider>

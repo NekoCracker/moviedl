@@ -17,7 +17,7 @@
         "UIBackgroundModes": [
           "audio"
         ],
-        "NSPhotoLibraryAddUsageDescription": "保存した動画をカメラロールにコピーするために使用します。",
+        "NSPhotoLibraryAddUsageDescription": "保存した動画を写真アプリにコピーするために使用します。",
         "NSFaceIDUsageDescription": "アプリやフォルダのロック解除に使用します。",
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -53,7 +53,15 @@
           "supportsPictureInPicture": true
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "保存した動画を写真アプリにコピーするために使用します。",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -56,6 +56,8 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
         kind TEXT NOT NULL,
         quality TEXT,
         output TEXT NOT NULL DEFAULT 'video',
+        -- 保存先フォルダ（NULL なら「未分類」）
+        folder_id INTEGER,
         status TEXT NOT NULL,
         progress REAL NOT NULL DEFAULT 0,
         error TEXT,
