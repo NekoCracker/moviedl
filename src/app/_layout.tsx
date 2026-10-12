@@ -12,6 +12,7 @@ import { useEffect } from 'react';
 
 import { AppTabs } from '@/components/app-tabs';
 import { migrateDbIfNeeded } from '@/db/schema';
+import { AppLockGate } from '@/security/app-lock';
 import { runQueue } from '@/download/engine';
 import { colors } from '@/theme';
 
@@ -53,6 +54,7 @@ export default function RootLayout() {
         <StatusBar style="light" />
         <ResumeDownloads />
         <AppTabs />
+        <AppLockGate />
       </ThemeProvider>
     </SQLiteProvider>
   );

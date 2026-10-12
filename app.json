@@ -9,7 +9,7 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.example.videosaver",
+      "bundleIdentifier": "com.nekocracker.moviedl",
       "supportsTablet": false,
       "infoPlist": {
         "UIFileSharingEnabled": true,
@@ -52,7 +52,8 @@
           "supportsBackgroundPlayback": true,
           "supportsPictureInPicture": true
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
