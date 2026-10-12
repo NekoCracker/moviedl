@@ -65,7 +65,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       CREATE TABLE conversions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-        kind TEXT NOT NULL CHECK (kind IN ('mp4', 'mp3', 'trim')),
+        kind TEXT NOT NULL CHECK (kind IN ('mp4', 'm4a', 'mp3', 'trim')),
         params_json TEXT NOT NULL DEFAULT '{}',
         total_chunks INTEGER NOT NULL DEFAULT 0,
         done_chunks INTEGER NOT NULL DEFAULT 0,

@@ -9,6 +9,7 @@ import { AppText } from '@/components/app-text';
 import { DetectedSheet } from '@/components/detected-sheet';
 import { detectorScript, parseDetectorMessage, toNavigableUrl, type DetectedMedia } from '@/browser/detector';
 import { enqueueDownload, type DownloadOutput } from '@/db/downloads';
+import { runQueue } from '@/download/engine';
 import { colors, fonts, radius } from '@/theme';
 
 const HOME_URL = 'https://www.google.com/';
@@ -75,6 +76,7 @@ export default function BrowserScreen() {
       kind: item.kind,
       output,
     });
+    runQueue(db);
     Alert.alert('ダウンロードに追加しました', item.pageTitle);
   };
 

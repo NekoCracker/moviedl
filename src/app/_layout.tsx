@@ -6,12 +6,13 @@ import {
 } from '@expo-google-fonts/zen-kaku-gothic-new';
 import { DarkTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { SQLiteProvider } from 'expo-sqlite';
+import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { AppTabs } from '@/components/app-tabs';
 import { migrateDbIfNeeded } from '@/db/schema';
+import { runQueue } from '@/download/engine';
 import { colors } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -50,8 +51,18 @@ export default function RootLayout() {
     <SQLiteProvider databaseName="library.db" onInit={migrateDbIfNeeded}>
       <ThemeProvider value={navigationTheme}>
         <StatusBar style="light" />
+        <ResumeDownloads />
         <AppTabs />
       </ThemeProvider>
     </SQLiteProvider>
   );
+}
+
+// 起動時に、前回終わらなかったダウンロードを再開する
+function ResumeDownloads() {
+  const db = useSQLiteContext();
+  useEffect(() => {
+    runQueue(db);
+  }, [db]);
+  return null;
 }
