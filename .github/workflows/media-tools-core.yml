@@ -27,7 +27,15 @@ jobs:
           path: modules/media-tools/core/.build
           key: core-${{ hashFiles('modules/media-tools/core/build-ios.sh') }}
       - name: Build xcframework
-        run: modules/media-tools/core/build-ios.sh
+        run: |
+          set -o pipefail
+          modules/media-tools/core/build-ios.sh 2>&1 | tee build.log
+      - name: Show failure log
+        if: failure()
+        run: |
+          # configure の詳細ログがあれば末尾を足す
+          for f in modules/media-tools/core/.build/ffmpeg-*/ffbuild/config.log; do [ -f "$f" ] && tail -n 60 "$f" >> build.log; done
+          .github/scripts/annotate-log.sh build.log 240
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
