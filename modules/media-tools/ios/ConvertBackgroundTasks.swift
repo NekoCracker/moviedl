@@ -18,8 +18,12 @@ final class ConvertBackgroundTasks {
   private var continuedTasks: [String: AnyObject] = [:]
   private var latestFraction: [String: Double] = [:]
 
+  // BGContinuedProcessingTask は区間ごとの変換のたびにシステムの進捗通知が出てうるさいので使わない（2026-10-12 ユーザー判断）。
+  // アプリを閉じたときは beginBackgroundTask で少し延長し、続きは次に開いたときに再開する
+  private static let useContinuedProcessing = false
+
   var isSupported: Bool {
-    if #available(iOS 26.0, *) { return true }
+    if #available(iOS 26.0, *) { return Self.useContinuedProcessing }
     return false
   }
 
@@ -55,7 +59,7 @@ final class ConvertBackgroundTasks {
     lock.unlock()
 
     #if compiler(>=6.2)
-    if #available(iOS 26.0, *), register(identifier: "\(identifierPrefix).\(Self.sanitize(jobId))") {
+    if #available(iOS 26.0, *), Self.useContinuedProcessing, register(identifier: "\(identifierPrefix).\(Self.sanitize(jobId))") {
       let request = BGContinuedProcessingTaskRequest(
         identifier: "\(identifierPrefix).\(Self.sanitize(jobId))",
         title: title,

@@ -12,7 +12,6 @@ import { loadSettings } from '@/db/settings';
 import { mediaFile } from '@/download/storage';
 import { notifyJobsChanged, setLiveProgress } from '@/download/store';
 import { createThumbnail } from '@/library/media-actions';
-import { notifyFinished } from '@/notifications';
 
 export type ConversionKind = 'mp4' | 'm4a' | 'mp3' | 'trim';
 export type ConversionStatus = 'pending' | 'running' | 'paused' | 'done' | 'error';
@@ -124,13 +123,6 @@ export function watchConversions(db: SQLiteDatabase) {
   runConversions(db);
 }
 
-const finishedMessages: Record<ConversionKind, string> = {
-  mp4: 'MP4への変換が完了しました',
-  m4a: '音声を保存しました',
-  mp3: '音声を保存しました',
-  trim: 'トリミングが完了しました',
-};
-
 // 発熱・電池残量が少ないときは、変換を始める前に確かめる。続けてよければ true
 export function checkDeviceBeforeConvert(): Promise<boolean> {
   const condition = MediaTools?.deviceCondition();
@@ -185,7 +177,7 @@ async function runOne(db: SQLiteDatabase, job: ConversionRow): Promise<'finished
     await finish(db, job, item, params, output);
     await db.runAsync("UPDATE conversions SET status = 'done', progress = 1, error = NULL WHERE id = ?", job.id);
     removeWorkDirectory(job.id);
-    notifyFinished(finishedMessages[job.kind], item.title);
+    // 変換の通知は出さない（2026-10-12 ユーザー判断）
   } catch (e) {
     if (e instanceof StoppedError || stopRequest) {
       if (stopRequest === 'cancel') {
