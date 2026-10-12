@@ -11,10 +11,13 @@ export function Scrubber({
   position,
   duration,
   onSeek,
+  combinedTime = false,
 }: {
   position: number;
   duration: number;
   onSeek: (seconds: number) => void;
+  // true なら「0:04 / 1:19:29」の形でまとめて表示する
+  combinedTime?: boolean;
 }) {
   const [width, setWidth] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
@@ -55,14 +58,20 @@ export function Scrubber({
           />
         </View>
       </GestureDetector>
-      <View style={styles.times}>
-        <AppText variant="small" tone="secondary">
-          {formatDuration(shown)}
+      {combinedTime ? (
+        <AppText variant="small" tone="secondary" style={styles.combined}>
+          {formatDuration(shown)} / {formatDuration(duration)}
         </AppText>
-        <AppText variant="small" tone="secondary">
-          -{formatDuration(Math.max(0, duration - shown))}
-        </AppText>
-      </View>
+      ) : (
+        <View style={styles.times}>
+          <AppText variant="small" tone="secondary">
+            {formatDuration(shown)}
+          </AppText>
+          <AppText variant="small" tone="secondary">
+            -{formatDuration(Math.max(0, duration - shown))}
+          </AppText>
+        </View>
+      )}
     </View>
   );
 }
@@ -75,4 +84,5 @@ const styles = StyleSheet.create({
   knob: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: colors.text },
   knobActive: { width: 18, height: 18, borderRadius: 9 },
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  combined: { marginTop: 2, fontVariant: ['tabular-nums'] },
 });

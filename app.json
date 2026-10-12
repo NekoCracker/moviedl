@@ -3,7 +3,7 @@
     "name": "動画保存",
     "slug": "video-saver",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "videosaver",
     "userInterfaceStyle": "dark",
