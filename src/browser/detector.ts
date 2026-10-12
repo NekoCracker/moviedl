@@ -24,6 +24,8 @@ export const detectorScript = `
 (function () {
   if (window.__vsDetector) { return; }
   window.__vsDetector = true;
+  // Cloudflare の確認（Turnstile）の枠の中では何もしない。fetch などを書き換えていると確認が通らない
+  if (location.hostname === 'challenges.cloudflare.com') { return; }
 
   var seen = {};
   var FILE_EXT = /\\.(mp4|m4v|mov|webm|mkv|flv|avi|ts|m4a|mp3)(\\?|#|$)/i;
@@ -148,6 +150,35 @@ export const detectorScript = `
   }
 
   var origOpen = XMLHttpRequest.prototype.open;
+  var origEmeFn = navigator.requestMediaKeySystemAccess;
+
+  // Cloudflare の確認ページでは、確認用のスクリプトが動く前に書き換えを元に戻す。
+  // パーサーはスクリプトを実行する前に MutationObserver へ通知するので、ここで間に合う
+  function restoreNatives() {
+    if (origFetch) { window.fetch = origFetch; }
+    XMLHttpRequest.prototype.open = origOpen;
+    if (origEmeFn) { navigator.requestMediaKeySystemAccess = origEmeFn; }
+  }
+  function isChallengeScript(node) {
+    if (!node || node.tagName !== 'SCRIPT') { return false; }
+    var src = node.getAttribute('src') || '';
+    return src.indexOf('/cdn-cgi/challenge-platform/') !== -1 || (node.textContent || '').indexOf('_cf_chl_opt') !== -1;
+  }
+  var challengeWatch = new MutationObserver(function (records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes;
+      for (var j = 0; j < added.length; j++) {
+        if (isChallengeScript(added[j])) {
+          restoreNatives();
+          challengeWatch.disconnect();
+          return;
+        }
+      }
+    }
+  });
+  challengeWatch.observe(document, { childList: true, subtree: true });
+  document.addEventListener('DOMContentLoaded', function () { challengeWatch.disconnect(); });
+
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__vsUrl = url;
     this.addEventListener('load', function () {

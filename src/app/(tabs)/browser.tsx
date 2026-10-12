@@ -38,6 +38,7 @@ import { runQueue } from '@/download/engine';
 import { colors, fonts, radius } from '@/theme';
 
 const injectedScript = `${detectorScript}\n${linkMenuScript}`;
+const SAFARI_UA_SUFFIX = 'Version/26.0 Mobile/15E148 Safari/604.1';
 
 export default function BrowserScreen() {
   const db = useSQLiteContext();
@@ -373,6 +374,8 @@ export default function BrowserScreen() {
             incognito={isPrivate}
             sharedCookiesEnabled={!isPrivate}
             setSupportMultipleWindows
+            // WKWebView の標準の User-Agent には「Safari」が入らず、Cloudflare などに確認ページで止められやすい
+            applicationNameForUserAgent={SAFARI_UA_SUFFIX}
             style={styles.web}
           />
         )}
