@@ -32,6 +32,8 @@ import {
   saveToCameraRoll,
   thumbnailUri,
 } from '@/library/media-actions';
+import { usePlayback } from '@/player/playback';
+import { requirePremium } from '@/premium/store';
 import { folderUnlock } from '@/security/folder-unlock';
 import { colors, fonts, placeholderTint, radius } from '@/theme';
 import { formatBytes, formatDuration } from '@/utils/format';
@@ -60,6 +62,7 @@ export default function FolderScreen() {
   const sort = sortOptions[sortIndex ?? 0];
   const [selection, setSelection] = useState<Set<number> | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const playback = usePlayback();
 
   // ロック中のフォルダに解除せず来た場合（バックグラウンドから戻った時を含む）はライブラリへ戻す
   const guardLock = useCallback(async () => {
@@ -123,6 +126,7 @@ export default function FolderScreen() {
     } finally {
       setBusy(null);
       await load();
+      playback.refresh();
     }
   };
 
@@ -210,6 +214,20 @@ export default function FolderScreen() {
       if (!NATIVE_VIDEO_CONTAINERS.includes(item.container ?? '')) {
         actions.push({ label: 'MP4に変換', run: () => queue(item, 'mp4') });
       }
+      actions.push({
+        label: 'トリミング',
+        run: () => {
+          if (requirePremium('trim')) router.push({ pathname: '/edit/[id]', params: { id: String(item.id), mode: 'trim' } });
+        },
+      });
+      if (NATIVE_VIDEO_CONTAINERS.includes(item.container ?? '')) {
+        actions.push({
+          label: 'サムネイルを選ぶ',
+          run: () => {
+            if (requirePremium('thumbnail')) router.push({ pathname: '/edit/[id]', params: { id: String(item.id), mode: 'thumbnail' } });
+          },
+        });
+      }
       actions.push({ label: '音声を書き出す（m4a）', run: () => queue(item, 'm4a') });
       actions.push({ label: '音声を書き出す（mp3）', run: () => queue(item, 'mp3') });
     }
@@ -239,18 +257,15 @@ export default function FolderScreen() {
 
   const totalBytes = items.reduce((sum, item) => sum + (item.sizeBytes ?? 0), 0);
 
-  const openPlayer = (options: { startId?: number; shuffle?: boolean }) => {
-    router.push({
-      pathname: '/player',
-      params: {
-        folderId: String(folderId),
-        type: mediaType,
-        sortKey: sort.key,
-        sortDir: sort.dir,
-        ...(options.startId != null ? { startId: String(options.startId) } : {}),
-        ...(options.shuffle ? { shuffle: '1' } : {}),
-      },
+  const openPlayer = async (options: { startId?: number; shuffle?: boolean }) => {
+    await playback.start({
+      folderId,
+      type: mediaType,
+      sort: { key: sort.key, dir: sort.dir },
+      startId: options.startId,
+      shuffle: options.shuffle,
     });
+    router.push('/player');
   };
 
   const chooseSort = () => {

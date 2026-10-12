@@ -10,3 +10,7 @@ export function setPlaybackRate(player: VideoPlayer, rate: number) {
 export function seekTo(player: VideoPlayer, seconds: number) {
   player.currentTime = seconds;
 }
+
+export function setBackgroundPlayback(player: VideoPlayer, enabled: boolean) {
+  player.staysActiveInBackground = enabled;
+}

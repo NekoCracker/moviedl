@@ -75,7 +75,7 @@ export async function saveToCameraRoll(items: MediaItem[]): Promise<CameraRollRe
 
 // ---- 変換の予約（処理はネイティブモジュール側で行う。feature-spec.md §2-12・§2-13） ----
 
-export async function queueConversion(db: SQLiteDatabase, videoId: number, kind: 'mp4' | 'm4a' | 'mp3', params: Record<string, unknown> = {}) {
+export async function queueConversion(db: SQLiteDatabase, videoId: number, kind: 'mp4' | 'm4a' | 'mp3' | 'trim', params: Record<string, unknown> = {}) {
   const existing = await db.getFirstAsync<{ id: number }>(
     "SELECT id FROM conversions WHERE video_id = ? AND kind = ? AND status IN ('pending', 'running', 'paused')",
     videoId,
