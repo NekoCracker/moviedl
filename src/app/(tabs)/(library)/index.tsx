@@ -6,6 +6,7 @@ import { useCallback, useState } from 'react';
 import { ActionSheetIOS, Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AdBanner } from '@/ads/banner';
 import { AppText } from '@/components/app-text';
 import { FolderPasscodeModal, type FolderPasscodeMode } from '@/components/folder-passcode-modal';
 import { SegmentedControl } from '@/components/segmented-control';
@@ -239,9 +240,13 @@ export default function LibraryScreen() {
         columnWrapperStyle={styles.row}
         contentContainerStyle={styles.grid}
         ListFooterComponent={
-          <AppText variant="small" tone="muted" style={styles.hint}>
-            フォルダを長押しすると、名前の変更・パスコード・並べ替え・削除ができます。
-          </AppText>
+          <>
+            <AppText variant="small" tone="muted" style={styles.hint}>
+              フォルダを長押しすると、名前の変更・パスコード・並べ替え・削除ができます。
+            </AppText>
+            {/* タブバーやミニプレイヤーと重ならないよう、一覧の最後に置く */}
+            <AdBanner />
+          </>
         }
         renderItem={({ item }) => <FolderTile folder={item} onPress={() => openFolder(item)} onLongPress={() => folderMenu(item)} />}
       />

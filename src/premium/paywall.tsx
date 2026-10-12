@@ -4,7 +4,7 @@ import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleS
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
-import { PRIVACY_URL, TERMS_URL } from '@/config/links';
+import { MANAGE_SUBSCRIPTIONS_URL, PRIVACY_URL, TERMS_URL } from '@/config/links';
 import { loadPlans, purchase, purchasesAvailable, restore, type Plans } from '@/premium/purchases';
 import { closePaywall, usePremiumState } from '@/premium/store';
 import { colors, radius } from '@/theme';
@@ -59,6 +59,16 @@ function Paywall() {
       const outcome = await purchase(pkg);
       if (outcome === 'purchased') {
         Alert.alert('ありがとうございます', 'プレミアムが有効になりました。');
+        closePaywall();
+      } else if (outcome === 'purchased-while-subscribed') {
+        Alert.alert(
+          'ありがとうございます',
+          'プレミアムが有効になりました。月額プランは自動では解約されません。iPhoneの「設定」→「Apple ID」→「サブスクリプション」から解約してください。',
+          [
+            { text: 'あとで' },
+            { text: '解約の画面を開く', onPress: () => Linking.openURL(MANAGE_SUBSCRIPTIONS_URL) },
+          ],
+        );
         closePaywall();
       } else if (outcome === 'pending') {
         Alert.alert('承認待ち', '購入の承認が済むと、自動でプレミアムが有効になります。');

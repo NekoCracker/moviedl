@@ -41,13 +41,15 @@ export async function loadPlans(): Promise<Plans> {
   };
 }
 
-export type PurchaseOutcome = 'purchased' | 'cancelled' | 'pending';
+// purchased-while-subscribed: 買い切りを買ったが、月額プランもまだ自動更新される状態（アプリからは解約できない）
+export type PurchaseOutcome = 'purchased' | 'purchased-while-subscribed' | 'cancelled' | 'pending';
 
 export async function purchase(pkg: PurchasesPackage): Promise<PurchaseOutcome> {
   try {
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     applyCustomerInfo(customerInfo);
-    return customerInfo.entitlements.active[ENTITLEMENT_ID] ? 'purchased' : 'pending';
+    if (!customerInfo.entitlements.active[ENTITLEMENT_ID]) return 'pending';
+    return pkg.packageType === PACKAGE_TYPE.LIFETIME && customerInfo.activeSubscriptions.length > 0 ? 'purchased-while-subscribed' : 'purchased';
   } catch (e) {
     if ((e as { userCancelled?: boolean }).userCancelled) return 'cancelled';
     throw e;

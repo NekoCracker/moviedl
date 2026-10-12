@@ -9,6 +9,8 @@ export function mediaDirectory(): Directory {
   const dir = new Directory(Paths.document, MEDIA_DIR);
   if (!dir.exists) {
     dir.create({ intermediates: true });
+    // 作り直したフォルダ（初期化のあと等）には、もう一度バックアップ除外を付ける
+    backupExcluded = false;
   }
   if (!backupExcluded) {
     // 動画は大きいので iCloud バックアップに含めない（フォルダに付ければ中身すべてに効く）

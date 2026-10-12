@@ -27,7 +27,8 @@ function ensureAd(): InterstitialAd | null {
 export function initAds(): Promise<void> {
   if (initialized) return initialized;
   initialized = (async () => {
-    if (isPremiumNow() || !UNIT_ID) return;
+    // バナーだけ設定されている場合も SDK は初期化する
+    if (isPremiumNow() || (!UNIT_ID && !process.env.EXPO_PUBLIC_ADMOB_BANNER_IOS && !__DEV__)) return;
     try {
       const current = await getTrackingPermissionsAsync();
       if (current.canAskAgain && current.status === 'undetermined') {

@@ -19,13 +19,16 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    # SDK 57 の ExpoModulesJSI は Xcode 27 前提（Xcode 26.3 では RuntimeScheduler.h がエラーになる）
+    runs-on: macos-26
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
       - name: Select Xcode
         run: |
-          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | grep -vi beta | sort -V | tail -n 1)
+          [ -z "$XCODE" ] && XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -n 1)
           [ -n "$XCODE" ] && sudo xcode-select -s "$XCODE"
           xcodebuild -version
       - uses: actions/setup-node@v5
@@ -44,7 +47,7 @@ jobs:
           SCHEME=$(xcodebuild -list -json -workspace "$WS" | python3 -c 'import json,sys; d=json.load(sys.stdin)["workspace"]["schemes"]; print(next(s for s in d if not s.startswith("Pods") and s not in ("EXConstants","EXUpdates")))')
           echo "workspace=$WS scheme=$SCHEME"
           xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee build.log | grep -E '^(\*\*|.*error:|.*warning: .*MediaTools)' || true
+            -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee build.log | grep -E '^(\*\*|.*error:|.*warning: .*MediaTools)' || true
           grep -q '\*\* BUILD SUCCEEDED \*\*' build.log
       - name: Annotate errors
         if: failure()

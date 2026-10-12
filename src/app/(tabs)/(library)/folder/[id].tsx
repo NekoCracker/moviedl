@@ -214,6 +214,12 @@ export default function FolderScreen() {
       },
       { label: 'フォルダへ移動', run: () => chooseMoveTarget([item]) },
     ];
+    if (playback.current && playback.current.id !== item.id) {
+      actions.unshift(
+        { label: '次に再生', run: () => playback.playNext(item) },
+        { label: 'キューの最後に追加', run: () => playback.addToQueue(item) },
+      );
+    }
     if (item.mediaType === 'video') {
       actions.push({ label: '写真アプリに保存', run: () => copyToCameraRoll([item]) });
       if (!NATIVE_VIDEO_CONTAINERS.includes(item.container ?? '')) {

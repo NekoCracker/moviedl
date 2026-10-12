@@ -30,6 +30,7 @@ import {
   type Bookmark,
   type BrowserTab,
 } from '@/db/browser';
+import { AdBanner } from '@/ads/banner';
 import { showDownloadAd } from '@/ads/download-ad';
 import { ensureNotificationPermission } from '@/notifications';
 import { enqueueDownload, type DownloadOutput } from '@/db/downloads';
@@ -364,6 +365,8 @@ export default function BrowserScreen() {
           </Pressable>
         ) : null}
       </View>
+
+      <AdBanner />
 
       <View style={styles.toolbar}>
         <ToolbarButton icon="chevron.left" label="戻る" disabled={!nav.canGoBack || isStartPage} onPress={() => webViewRef.current?.goBack()} />

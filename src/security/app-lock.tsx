@@ -1,12 +1,14 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, View } from 'react-native';
+import { Alert, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import { PasscodePad } from '@/components/passcode-pad';
 import { loadSettings, type AppSettings } from '@/db/settings';
+import { usePlayback } from '@/player/playback';
 import { appPasscode, authenticateWithBiometrics } from '@/security/passcode';
+import { resetAllData } from '@/security/reset';
 import { colors } from '@/theme';
 
 // アプリ全体のロック画面と、アプリ切り替え画面での目隠し（feature-spec.md §2-1）
@@ -19,6 +21,7 @@ export function AppLockGate() {
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const backgroundedAt = useRef<number | null>(null);
+  const playback = usePlayback();
 
   const shouldLock = useCallback(async () => {
     const settings = await loadSettings(db);
@@ -80,6 +83,35 @@ export function AppLockGate() {
     }
   };
 
+  const forgot = () => {
+    Alert.alert(
+      'パスコードを忘れた場合',
+      'このアプリにはパスコードを確認する仕組みがないため、初期化が必要です。保存した動画・音声とフォルダ（ロックしたものを含む）がすべて削除されます。ブックマークと購入済みのプレミアムは残ります。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: 'すべて削除して初期化',
+          style: 'destructive',
+          onPress: () =>
+            Alert.alert('本当に削除しますか？', '削除した動画は元に戻せません。', [
+              { text: 'キャンセル', style: 'cancel' },
+              {
+                text: '削除する',
+                style: 'destructive',
+                onPress: async () => {
+                  playback.stop();
+                  await resetAllData(db);
+                  setLocked(false);
+                  setError(null);
+                  Alert.alert('初期化しました');
+                },
+              },
+            ]),
+        },
+      ],
+    );
+  };
+
   if (locked) {
     return (
       <View style={[styles.overlay, { paddingTop: insets.top + 80 }]}>
@@ -89,6 +121,11 @@ export function AppLockGate() {
           onBiometrics={biometricsEnabled ? tryBiometrics : undefined}
           error={error}
         />
+        <Pressable accessibilityRole="button" onPress={forgot} style={styles.forgot}>
+          <AppText variant="caption" tone="secondary">
+            パスコードを忘れた場合
+          </AppText>
+        </Pressable>
       </View>
     );
   }
@@ -107,4 +144,5 @@ export function AppLockGate() {
 const styles = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFill, backgroundColor: colors.background, zIndex: 1000 },
   cover: { alignItems: 'center', justifyContent: 'center' },
+  forgot: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, marginTop: 24 },
 });

@@ -74,9 +74,10 @@ export default function RootLayout() {
               <Stack.Screen name="edit/[id]" options={{ presentation: 'modal' }} />
               <Stack.Screen name="licenses" options={{ presentation: 'modal' }} />
             </Stack>
+            <PaywallHost />
+            {/* パスコードを忘れて初期化したとき再生も止めるので、PlaybackProvider の中に置く */}
+            <AppLockGate />
           </PlaybackProvider>
-          <PaywallHost />
-          <AppLockGate />
         </ThemeProvider>
       </SQLiteProvider>
     </GestureHandlerRootView>

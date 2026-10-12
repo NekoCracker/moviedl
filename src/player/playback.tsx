@@ -37,6 +37,8 @@ type PlaybackState = {
   shuffle: boolean;
   rate: number;
   sleepEndsAt: number | null;
+  // スリープタイマー「この動画の終わりまで」
+  sleepAtEnd: boolean;
   isPlaying: boolean;
   start: (request: QueueRequest) => Promise<void>;
   goTo: (index: number) => void;
@@ -49,7 +51,10 @@ type PlaybackState = {
   toggleShuffle: () => void;
   setLoop: (loop: LoopMode) => void;
   setRate: (rate: number) => void;
+  // 0 でオフ、-1 で「この動画の終わりまで」
   setSleepMinutes: (minutes: number) => void;
+  playNext: (item: MediaItem) => void;
+  addToQueue: (item: MediaItem) => void;
   stop: () => void;
   // タイトル変更や削除のあとにキューの情報を読み直す
   refresh: () => Promise<void>;
@@ -75,6 +80,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [shuffle, setShuffle] = useState(false);
   const [rate, setRateState] = useState(1);
   const [sleepEndsAt, setSleepEndsAt] = useState<number | null>(null);
+  const [sleepAtEnd, setSleepAtEnd] = useState(false);
   const [vlcPlaying, setVlcPlaying] = useState(false);
   // どの動画の長さかも持っておき、切り替え直後に前の動画の長さを使わないようにする
   const [vlcDuration, setVlcDuration] = useState({ id: 0, sec: 0 });
@@ -251,6 +257,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
   const onEnd = () => {
     if (current) savePlaybackPosition(db, current.id, 0);
+    if (sleepAtEnd) {
+      setSleepAtEnd(false);
+      pause();
+      return;
+    }
     const next = indexAfterEnd(index, queue.length, loop);
     if (next !== null) goTo(next);
   };
@@ -338,6 +349,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setQueue([]);
     setIndex(0);
     setSleepEndsAt(null);
+    setSleepAtEnd(false);
     lastRequest.current = null;
   }, [db, current, player, getTime]);
 
@@ -361,6 +373,24 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setIndex(stillCurrent >= 0 ? stillCurrent : Math.min(index, nextQueue.length - 1));
   }, [db, current, queue, index, stop]);
 
+  // 「次に再生」「キューの最後に追加」（feature-spec.md §2-14）。キューが空なら、その1本から再生を始める
+  const insertIntoQueue = (item: MediaItem, position: 'next' | 'last') => {
+    if (!current) {
+      originalOrder.current = [item];
+      lastRequest.current = null;
+      setQueue([item]);
+      setIndex(0);
+      return;
+    }
+    if (item.id === current.id) return;
+    const rest = queue.filter((m) => m.id !== item.id);
+    const currentIndex = rest.findIndex((m) => m.id === current.id);
+    const at = position === 'next' ? currentIndex + 1 : rest.length;
+    setQueue([...rest.slice(0, at), item, ...rest.slice(at)]);
+    setIndex(currentIndex);
+    originalOrder.current = [...originalOrder.current.filter((m) => m.id !== item.id), item];
+  };
+
   const duration = current?.durationSec ?? (engine === 'vlc' ? (vlcDuration.id === current?.id ? vlcDuration.sec : 0) : player.duration);
 
   const value: PlaybackState = {
@@ -375,6 +405,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     shuffle,
     rate,
     sleepEndsAt,
+    sleepAtEnd,
     isPlaying,
     start,
     goTo,
@@ -387,7 +418,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     toggleShuffle,
     setLoop,
     setRate,
-    setSleepMinutes: (minutes) => setSleepEndsAt(minutes > 0 ? Date.now() + minutes * 60 * 1000 : null),
+    setSleepMinutes: (minutes) => {
+      setSleepAtEnd(minutes < 0);
+      setSleepEndsAt(minutes > 0 ? Date.now() + minutes * 60 * 1000 : null);
+    },
+    playNext: (item) => insertIntoQueue(item, 'next'),
+    addToQueue: (item) => insertIntoQueue(item, 'last'),
     stop,
     refresh,
   };

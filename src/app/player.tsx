@@ -19,12 +19,13 @@ const sleepOptions = [
   { label: '15分', minutes: 15 },
   { label: '30分', minutes: 30 },
   { label: '60分', minutes: 60 },
+  { label: 'この動画の終わりまで', minutes: -1 },
 ];
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
   const playback = usePlayback();
-  const { player, queue, index, current, engine, duration, loop, shuffle, rate, sleepEndsAt, isPlaying } = playback;
+  const { player, queue, index, current, engine, duration, loop, shuffle, rate, sleepEndsAt, sleepAtEnd, isPlaying } = playback;
   const currentTime = usePlaybackTime();
 
   // キューが空になったら（全部削除された等）閉じる
@@ -52,7 +53,9 @@ export default function PlayerScreen() {
 
   const sleepEndLabel = sleepEndsAt
     ? `〜${new Date(sleepEndsAt).getHours()}:${String(new Date(sleepEndsAt).getMinutes()).padStart(2, '0')}`
-    : 'オフ';
+    : sleepAtEnd
+      ? 'この動画まで'
+      : 'オフ';
   const upNext = queue[indexForNext(index, queue.length)];
   const isAudio = current?.mediaType === 'audio';
 
@@ -120,7 +123,7 @@ export default function PlayerScreen() {
         <ToolTile label="速度" value={`${rate}x`} active={rate !== 1} onPress={chooseRate} />
         <ToolTile label="ループ" value={loopLabels[loop]} active={loop !== 'off'} onPress={() => playback.setLoop(nextLoopMode(loop))} />
         <ToolTile label="ランダム" value={shuffle ? 'オン' : 'オフ'} active={shuffle} onPress={playback.toggleShuffle} />
-        <ToolTile label="タイマー" value={sleepEndLabel} active={sleepEndsAt != null} onPress={chooseSleep} />
+        <ToolTile label="タイマー" value={sleepEndLabel} active={sleepEndsAt != null || sleepAtEnd} onPress={chooseSleep} />
       </View>
 
       {upNext && queue.length > 1 ? (
