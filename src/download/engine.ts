@@ -225,7 +225,7 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
     const f = new File(temp, p.name);
     if (f.exists) {
       done++;
-      bytes += f.size;
+      bytes += sizeOf(f);
     }
   }
   let next = 0;
@@ -233,7 +233,11 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
   const report = () =>
     setLiveProgress(job.id, {
       fraction: done / parts.length,
-      detail: done > 0 ? `${mb(bytes)} / 約 ${mb((bytes / done) * parts.length)}` : mb(0),
+      // 大きさが取れなかったときは割合だけ出す
+      detail:
+        done > 0 && bytes > 0
+          ? `${mb(bytes)} / 約 ${mb((bytes / done) * parts.length)}`
+          : `${Math.round((done / parts.length) * 100)}%`,
     });
   report();
 
@@ -246,10 +250,12 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
       const target = new File(temp, part.name);
       if (target.exists) continue;
       const partial = new File(temp, `${part.name}.part`);
-      await downloadWithRetry(part.url, partial, job);
+      const downloaded = await downloadWithRetry(part.url, partial, job);
+      // 移動の前に大きさを読む（移動後のパスでは 0 が返ることがあった）
+      const partBytes = sizeOf(downloaded) || sizeOf(partial);
       partial.move(target);
       done++;
-      bytes += target.size;
+      bytes += partBytes || sizeOf(target);
       report();
     }
   };
@@ -274,11 +280,10 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
 }
 
 // 一時的な通信の途切れで全体を失敗にしないよう、区間ごとに数回やり直す
-async function downloadWithRetry(url: string, dest: File, job: JobRow) {
+async function downloadWithRetry(url: string, dest: File, job: JobRow): Promise<File> {
   for (let attempt = 0; ; attempt++) {
     try {
-      await File.downloadFileAsync(url, dest, { headers: headersFor(job), idempotent: true });
-      return;
+      return await File.downloadFileAsync(url, dest, { headers: headersFor(job), idempotent: true });
     } catch (e) {
       checkStop();
       if (attempt >= 2 || wentBackground || AppState.currentState !== 'active') throw e;
@@ -331,6 +336,18 @@ async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadRe
 function guessContainer(url: string): string | null {
   const match = url.split(/[?#]/)[0].match(/\.([a-z0-9]{2,4})$/i);
   return match ? match[1].toLowerCase() : null;
+}
+
+// File.size が取れない（null・0）ときは info() でも試す
+function sizeOf(file: File): number {
+  try {
+    const direct = file.size;
+    if (typeof direct === 'number' && direct > 0) return direct;
+    const info = file.info();
+    return info.exists && typeof info.size === 'number' ? info.size : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function mb(bytes: number): string {
