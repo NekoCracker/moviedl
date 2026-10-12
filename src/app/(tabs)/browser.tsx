@@ -10,6 +10,7 @@ import { BookmarksSheet } from '@/components/browser/bookmarks-sheet';
 import { StartPage } from '@/components/browser/start-page';
 import { TabSwitcher } from '@/components/browser/tab-switcher';
 import { DetectedSheet } from '@/components/detected-sheet';
+import { onBrowsingDataCleared } from '@/browser/events';
 import { detectorScript, linkMenuScript, parseDetectorMessage, toNavigableUrl, type DetectedMedia } from '@/browser/detector';
 import {
   addBookmark,
@@ -58,6 +59,15 @@ export default function BrowserScreen() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [currentBookmark, setCurrentBookmark] = useState<Bookmark | null>(null);
   const pageUrlRef = useRef(START_PAGE_URL);
+
+  // 設定で「検出した動画のリスト」を消したとき
+  useEffect(
+    () =>
+      onBrowsingDataCleared(({ detected: clearDetected }) => {
+        if (clearDetected) setDetected([]);
+      }),
+    [],
+  );
   const recordedUrlRef = useRef<string | null>(null);
 
   const isStartPage = currentUrl === START_PAGE_URL;

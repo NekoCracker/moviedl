@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { SymbolView } from 'expo-symbols';
@@ -6,12 +7,14 @@ import { Alert, Pressable, SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
+import { cancelConversion, liveIdForConversion, pauseConversion, resumeConversion, type ConversionKind, type ConversionStatus } from '@/convert/engine';
 import type { DownloadStatus } from '@/db/downloads';
 import { cancelJob, pauseJob, resumeJob } from '@/download/engine';
+import { thumbnailUri } from '@/library/media-actions';
 import { onJobsChanged, useLiveProgress } from '@/download/store';
 import { colors, placeholderTint, radius } from '@/theme';
 
-type Job = {
+type DownloadRow = {
   id: number;
   title: string | null;
   kind: string;
@@ -19,9 +22,59 @@ type Job = {
   status: DownloadStatus;
   progress: number;
   error: string | null;
+  created_at: number;
+  thumbnail_path: string | null;
+  folder_name: string | null;
+};
+
+type ConversionRow = {
+  id: number;
+  kind: ConversionKind;
+  status: ConversionStatus;
+  progress: number;
+  error: string | null;
+  created_at: number;
+  title: string | null;
+  thumbnail_path: string | null;
+  folder_name: string | null;
+};
+
+// ダウンロードと変換（MP4変換・音声の書き出し・トリミング）を同じ一覧に並べる
+type Job = {
+  key: string;
+  source: 'download' | 'conversion';
+  id: number;
+  liveId: number;
+  title: string | null;
+  // 完了した行の説明（「動画」「音声 mp3」「MP4に変換」など）
+  label: string;
+  status: DownloadStatus;
+  progress: number;
+  error: string | null;
+  createdAt: number;
+  thumbnailPath: string | null;
+  folderName: string | null;
 };
 
 const ACTIVE: DownloadStatus[] = ['queued', 'downloading', 'paused', 'converting', 'error', 'blocked'];
+
+const conversionLabels: Record<ConversionKind, string> = {
+  mp4: 'MP4に変換',
+  m4a: '音声を書き出し（m4a）',
+  mp3: '音声を書き出し（mp3）',
+  trim: 'トリミング',
+};
+
+function conversionStatus(status: ConversionStatus): DownloadStatus {
+  switch (status) {
+    case 'pending':
+      return 'queued';
+    case 'running':
+      return 'converting';
+    default:
+      return status;
+  }
+}
 
 export default function DownloadsScreen() {
   const db = useSQLiteContext();
@@ -30,7 +83,58 @@ export default function DownloadsScreen() {
   const [jobs, setJobs] = useState<Job[]>([]);
 
   const load = useCallback(async () => {
-    setJobs(await db.getAllAsync<Job>('SELECT id, title, kind, output, status, progress, error FROM downloads ORDER BY created_at DESC LIMIT 200'));
+    const [downloads, conversions] = await Promise.all([
+      db.getAllAsync<DownloadRow>(
+        `SELECT d.id, d.title, d.kind, d.output, d.status, d.progress, d.error, d.created_at, v.thumbnail_path, f.name AS folder_name
+         FROM downloads d
+         LEFT JOIN videos v ON v.id = d.video_id
+         LEFT JOIN folders f ON f.id = COALESCE(v.folder_id, d.folder_id)
+         ORDER BY d.created_at DESC LIMIT 200`,
+      ),
+      db.getAllAsync<ConversionRow>(
+        `SELECT c.id, c.kind, c.status, c.progress, c.error, c.created_at, v.title, v.thumbnail_path, f.name AS folder_name
+         FROM conversions c
+         LEFT JOIN videos v ON v.id = c.video_id
+         LEFT JOIN folders f ON f.id = v.folder_id
+         ORDER BY c.created_at DESC LIMIT 200`,
+      ),
+    ]);
+    const rows: Job[] = [
+      ...downloads.map(
+        (d): Job => ({
+          key: `d${d.id}`,
+          source: 'download',
+          id: d.id,
+          liveId: d.id,
+          title: d.title,
+          label: d.output === 'video' ? '動画' : `音声 ${d.output}`,
+          status: d.status,
+          progress: d.progress,
+          error: d.error,
+          createdAt: d.created_at,
+          thumbnailPath: d.thumbnail_path,
+          folderName: d.folder_name,
+        }),
+      ),
+      ...conversions.map(
+        (c): Job => ({
+          key: `c${c.id}`,
+          source: 'conversion',
+          id: c.id,
+          liveId: liveIdForConversion(c.id),
+          title: c.title,
+          label: conversionLabels[c.kind],
+          status: conversionStatus(c.status),
+          progress: c.progress,
+          error: c.error,
+          createdAt: c.created_at,
+          thumbnailPath: c.thumbnail_path,
+          folderName: c.folder_name,
+        }),
+      ),
+    ];
+    rows.sort((x, y) => y.createdAt - x.createdAt);
+    setJobs(rows);
   }, [db]);
 
   useFocusEffect(
@@ -51,6 +155,7 @@ export default function DownloadsScreen() {
         style: 'destructive',
         onPress: async () => {
           await db.runAsync("DELETE FROM downloads WHERE status = 'done'");
+          await db.runAsync("DELETE FROM conversions WHERE status = 'done'");
           load();
         },
       },
@@ -67,7 +172,7 @@ export default function DownloadsScreen() {
           { key: 'active', title: `進行中・${active.length}件`, data: active },
           { key: 'done', title: '完了', data: done },
         ]}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item) => item.key}
         contentContainerStyle={styles.list}
         stickySectionHeadersEnabled={false}
         renderSectionHeader={({ section }) => (
@@ -88,11 +193,11 @@ export default function DownloadsScreen() {
           section.key === 'active' ? (
             <ActiveRow
               job={item}
-              fraction={live[item.id]?.fraction ?? item.progress}
-              detail={live[item.id]?.detail}
-              onPause={() => pauseJob(db, item.id)}
-              onResume={() => resumeJob(db, item.id)}
-              onCancel={() => cancelJob(db, item.id)}
+              fraction={live[item.liveId]?.fraction ?? item.progress}
+              detail={live[item.liveId]?.detail}
+              onPause={() => (item.source === 'download' ? pauseJob(db, item.id) : pauseConversion(db, item.id))}
+              onResume={() => (item.source === 'download' ? resumeJob(db, item.id) : resumeConversion(db, item.id))}
+              onCancel={() => (item.source === 'download' ? cancelJob(db, item.id) : cancelConversion(db, item.id))}
             />
           ) : (
             <DoneRow job={item} />
@@ -113,13 +218,13 @@ export default function DownloadsScreen() {
 function statusText(job: Job, detail?: string): { text: string; color: string } {
   switch (job.status) {
     case 'queued':
-      return { text: '待機中', color: colors.textSecondary };
+      return { text: job.source === 'conversion' ? `${job.label}・待機中` : '待機中', color: colors.textSecondary };
     case 'downloading':
       return { text: `ダウンロード中${detail ? `・${detail}` : ''}`, color: colors.textSecondary };
     case 'paused':
       return { text: '一時停止中', color: colors.textSecondary };
     case 'converting':
-      return { text: '変換中', color: colors.info };
+      return { text: `変換中${detail ? `・${detail}` : ''}`, color: colors.info };
     case 'blocked':
       return { text: job.error ?? '保存できません', color: colors.dangerText };
     case 'error':
@@ -145,12 +250,12 @@ function ActiveRow({
   onCancel: () => void;
 }) {
   const status = statusText(job, detail);
-  const canPause = job.status === 'downloading' || job.status === 'queued';
+  const canPause = job.status === 'downloading' || job.status === 'queued' || (job.source === 'conversion' && job.status === 'converting');
   const canResume = job.status === 'paused' || job.status === 'error';
   return (
     <View style={styles.card}>
       <View style={styles.cardRow}>
-        <View style={[styles.thumb, { backgroundColor: placeholderTint(job.id) }]} />
+        <Thumb job={job} />
         <View style={styles.cardText}>
           <AppText variant="bodyBold" numberOfLines={1}>
             {job.title ?? '無題'}
@@ -180,16 +285,25 @@ function RoundButton({ icon, label, onPress }: { icon: 'pause.fill' | 'arrow.clo
   );
 }
 
+function Thumb({ job }: { job: Job }) {
+  const uri = thumbnailUri(job.thumbnailPath);
+  return (
+    <View style={[styles.thumb, { backgroundColor: placeholderTint(job.id) }]}>
+      {uri ? <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+    </View>
+  );
+}
+
 function DoneRow({ job }: { job: Job }) {
   return (
     <View style={styles.doneRow}>
-      <View style={[styles.thumb, { backgroundColor: placeholderTint(job.id) }]} />
+      <Thumb job={job} />
       <View style={styles.cardText}>
         <AppText variant="body" numberOfLines={1}>
           {job.title ?? '無題'}
         </AppText>
         <AppText variant="small" tone="secondary">
-          {job.output === 'video' ? '動画' : `音声 ${job.output}`}・未分類
+          {[job.label, job.folderName].filter(Boolean).join('・')}
         </AppText>
       </View>
       <SymbolView name="checkmark" tintColor={colors.success} size={18} weight="bold" accessibilityLabel="完了" />
@@ -206,7 +320,7 @@ const styles = StyleSheet.create({
   clearButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 12, gap: 10 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  thumb: { width: 72, height: 40, borderRadius: 6 },
+  thumb: { width: 72, height: 40, borderRadius: 6, overflow: 'hidden' },
   cardText: { flex: 1, gap: 2 },
   roundButton: {
     width: 44,

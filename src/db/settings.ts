@@ -9,6 +9,8 @@ export type AppSettings = {
   rememberPlaybackRate: boolean;
   lastPlaybackRate: number;
   folderSort: 'manual' | 'name' | 'created';
+  // mp3 で保存・書き出しするときの音質（kbps）
+  mp3Bitrate: 128 | 192 | 320;
 };
 
 const defaults: AppSettings = {
@@ -19,6 +21,7 @@ const defaults: AppSettings = {
   rememberPlaybackRate: true,
   lastPlaybackRate: 1,
   folderSort: 'manual',
+  mp3Bitrate: 192,
 };
 
 export async function loadSettings(db: SQLiteDatabase): Promise<AppSettings> {

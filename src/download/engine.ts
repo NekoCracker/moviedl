@@ -7,6 +7,7 @@ import type { DetectedKind } from '@/browser/detector';
 import { nextManualOrder } from '@/db/library';
 import { UNSORTED_FOLDER_ID } from '@/db/schema';
 import type { DownloadOutput } from '@/db/downloads';
+import { loadSettings } from '@/db/settings';
 import { runConversions } from '@/convert/engine';
 import { createThumbnail } from '@/library/media-actions';
 import { parsePlaylist, pickVariant, type HlsMediaPlaylist } from './hls';
@@ -259,7 +260,7 @@ async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadRe
   const conversion = job.output === 'm4a' || job.output === 'mp3' ? job.output : result.container === 'ts' ? 'mp4' : null;
   if (conversion) {
     // 「音声のみ」で保存したものは、音声を書き出したあと元の動画を消す
-    const params = conversion === 'mp4' ? {} : { removeSource: true, bitrate: 192 };
+    const params = conversion === 'mp4' ? {} : { removeSource: true, bitrate: (await loadSettings(db)).mp3Bitrate };
     await db.runAsync(
       "INSERT INTO conversions (video_id, kind, params_json, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
       videoId,

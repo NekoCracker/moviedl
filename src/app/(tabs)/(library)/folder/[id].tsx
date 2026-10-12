@@ -23,6 +23,7 @@ import {
   type SortDir,
   type SortKey,
 } from '@/db/library';
+import { loadSettings } from '@/db/settings';
 import { UNSORTED_FOLDER_ID } from '@/db/schema';
 import {
   deleteMediaItems,
@@ -190,7 +191,7 @@ export default function FolderScreen() {
 
   const queue = (item: MediaItem, kind: 'mp4' | 'm4a' | 'mp3') =>
     runBusy('', async () => {
-      const added = await queueConversion(db, item.id, kind, kind === 'mp3' ? { bitrate: 192 } : {});
+      const added = await queueConversion(db, item.id, kind, kind === 'mp3' ? { bitrate: (await loadSettings(db)).mp3Bitrate } : {});
       runConversions(db);
       Alert.alert(added ? '変換を開始しました' : 'すでに変換待ちです', '進み具合は「ダウンロード」タブで確認できます。');
     });

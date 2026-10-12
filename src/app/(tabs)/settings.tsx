@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useState, type ReactNode } from 'react';
@@ -7,9 +7,8 @@ import { ActionSheetIOS, Alert, Linking, Modal, Pressable, ScrollView, StyleShee
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
-import { chooseHistoryRange } from '@/components/browser/bookmarks-sheet';
+import { ClearBrowsingDataSheet } from '@/components/clear-browsing-data-sheet';
 import { PasscodePad } from '@/components/passcode-pad';
-import { clearHistory } from '@/db/browser';
 import { MANAGE_SUBSCRIPTIONS_URL, PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { loadSettings, saveSetting, type AppSettings } from '@/db/settings';
 import { purchasesAvailable, restore } from '@/premium/purchases';
@@ -30,6 +29,7 @@ export default function SettingsScreen() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const isPremium = usePremium();
   const [passcodeFlow, setPasscodeFlow] = useState<null | { step: 'enter' | 'confirm'; first?: string; error?: string }>(null);
+  const [clearingData, setClearingData] = useState(false);
 
   const load = useCallback(async () => setSettings(await loadSettings(db)), [db]);
   useFocusEffect(
@@ -76,11 +76,14 @@ export default function SettingsScreen() {
     );
   };
 
-  const clearBrowsingData = () => {
-    // TODO: キャッシュ・Cookie の削除は WKWebsiteDataStore を使うネイティブモジュールで同じ期間指定に対応させる（feature-spec.md §2-7）
-    chooseHistoryRange('閲覧履歴を削除', (since) => {
-      clearHistory(db, since).then(() => Alert.alert('削除しました'));
-    });
+  const chooseMp3Bitrate = () => {
+    const options = [128, 192, 320] as const;
+    ActionSheetIOS.showActionSheetWithOptions(
+      { title: 'mp3の音質', message: '数字が大きいほど音質が良く、ファイルが大きくなります。', options: [...options.map((b) => `${b}kbps`), 'キャンセル'], cancelButtonIndex: options.length },
+      (i) => {
+        if (i < options.length) update('mp3Bitrate', options[i]);
+      },
+    );
   };
 
   const onRestore = async () => {
@@ -142,8 +145,12 @@ export default function SettingsScreen() {
           </Row>
         </Section>
 
+        <Section title="保存">
+          <Row label="mp3の音質" value={`${settings.mp3Bitrate}kbps`} onPress={chooseMp3Bitrate} />
+        </Section>
+
         <Section title="ブラウザ">
-          <Row label="閲覧データを削除" onPress={clearBrowsingData} destructive />
+          <Row label="閲覧データを削除" onPress={() => setClearingData(true)} destructive />
         </Section>
 
         <Section title="保存について">
@@ -156,10 +163,12 @@ export default function SettingsScreen() {
           <Row label="お問い合わせ・削除依頼" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
           <Row label="利用規約" onPress={() => Linking.openURL(TERMS_URL)} />
           <Row label="プライバシーポリシー" onPress={() => Linking.openURL(PRIVACY_URL)} />
-          <Row label="ライセンス" onPress={() => Alert.alert('ライセンス', 'VLCKit・FFmpeg（LGPL）などのライセンス表記は、組み込み時にここへ追加します。')} />
+          <Row label="ライセンス" onPress={() => router.push('/licenses')} />
           <Row label="バージョン" value={Constants.expoConfig?.version ?? ''} />
         </Section>
       </ScrollView>
+
+      <ClearBrowsingDataSheet visible={clearingData} onClose={() => setClearingData(false)} />
 
       <Modal visible={passcodeFlow != null} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setPasscodeFlow(null)}>
         <View style={styles.modal}>

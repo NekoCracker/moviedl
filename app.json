@@ -15,11 +15,15 @@
         "UIFileSharingEnabled": true,
         "LSSupportsOpeningDocumentsInPlace": true,
         "UIBackgroundModes": [
-          "audio"
+          "audio",
+          "processing"
         ],
         "NSPhotoLibraryAddUsageDescription": "保存した動画を写真アプリにコピーするために使用します。",
         "NSFaceIDUsageDescription": "アプリやフォルダのロック解除に使用します。",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.nekocracker.moviedl.convert.*"
+        ]
       }
     },
     "android": {
