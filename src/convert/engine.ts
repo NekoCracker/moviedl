@@ -48,6 +48,8 @@ export const liveIdForConversion = (id: number) => -id;
 let running = false;
 let currentJobId: string | null = null;
 let stopRequest: 'pause' | 'cancel' | null = null;
+// 変換中にアプリが裏に回ったか
+let wentBackground = false;
 
 class StoppedError extends Error {}
 
@@ -81,7 +83,8 @@ export async function runConversions(db: SQLiteDatabase) {
       if (!job) break;
       const outcome = await runOne(db, job);
       // バックグラウンドで時間切れになったら、前面に戻るまで待つ（AppState の監視から再開する）
-      if (outcome === 'interrupted') break;
+      // すでに前面に戻っていれば、そのまま続きから再開する
+      if (outcome === 'interrupted' && AppState.currentState !== 'active') break;
     }
   } finally {
     running = false;
@@ -115,6 +118,7 @@ export async function cancelConversion(db: SQLiteDatabase, id: number) {
 
 // アプリがバックグラウンドから戻ったら、中断していた変換を再開する
 AppState.addEventListener('change', (state) => {
+  if (state === 'background' && currentJobId !== null) wentBackground = true;
   if (state === 'active' && pendingDb) runConversions(pendingDb);
 });
 let pendingDb: SQLiteDatabase | null = null;
@@ -169,6 +173,7 @@ async function runOne(db: SQLiteDatabase, job: ConversionRow): Promise<'finished
   setLiveProgress(liveId, { fraction: job.total_chunks ? job.done_chunks / job.total_chunks : 0, detail: '準備しています' });
   currentJobId = String(job.id);
   stopRequest = null;
+  wentBackground = AppState.currentState === 'background';
   await activateKeepAwakeAsync('convert').catch(() => {});
 
   try {
@@ -190,6 +195,11 @@ async function runOne(db: SQLiteDatabase, job: ConversionRow): Promise<'finished
         await setStatus(db, job.id, 'pending');
         return 'interrupted';
       }
+    } else if (wentBackground || AppState.currentState !== 'active') {
+      // 裏に回ると iOS が映像のエンコーダー（VideoToolbox）を止めるため失敗する。
+      // エラーにはせず待機に戻し、前面に戻ったら終わった区間の続きから再開する
+      await setStatus(db, job.id, 'pending');
+      return 'interrupted';
     } else {
       await setStatus(db, job.id, 'error', e instanceof Error ? e.message : String(e));
     }
