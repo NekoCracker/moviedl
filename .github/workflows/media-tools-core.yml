@@ -18,11 +18,16 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          [ -n "$XCODE" ] && sudo xcode-select -s "$XCODE"
+          xcodebuild -version
       - name: Install build tools
         run: brew install meson ninja nasm pkg-config
       - name: Cache third-party builds
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: modules/media-tools/core/.build
           key: core-${{ hashFiles('modules/media-tools/core/build-ios.sh') }}

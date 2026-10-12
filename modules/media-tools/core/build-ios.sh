@@ -71,7 +71,9 @@ EOF
     sed -i '' '/lame_init_old/d' "$WORK/lame-$name/include/libmp3lame.sym" || true
     (
       cd "$WORK/lame-$name"
-      CC="$cc" CFLAGS="$cflags" LDFLAGS="-target $target -isysroot $sysroot" \
+      # CPP にも sysroot を渡さないと、標準ヘッダが「無い」と判定されて壊れたコードになる
+      CC="$cc" CPP="$cc -E" CPPFLAGS="-target $target -isysroot $sysroot" CFLAGS="$cflags" \
+        LDFLAGS="-target $target -isysroot $sysroot" \
         ./configure --host=aarch64-apple-darwin --prefix="$prefix" --disable-shared --enable-static \
         --disable-frontend --disable-decoder --disable-gtktest
       make -j"$JOBS" && make install
