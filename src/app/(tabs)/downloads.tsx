@@ -211,7 +211,7 @@ export default function DownloadsScreen() {
         ListFooterComponent={
           <View style={styles.notice}>
             <AppText variant="small" style={styles.noticeText}>
-              保護（DRM・暗号化）された動画は保存できません。権利者の許諾があるコンテンツのみ保存してください。
+              保護（DRM・暗号化）された動画は保存できません。
             </AppText>
           </View>
         }

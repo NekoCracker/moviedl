@@ -180,12 +180,12 @@ export default function SettingsScreen() {
 
         <Section title="保存について">
           <AppText variant="small" tone="secondary" style={styles.note}>
-            動画は端末にのみ保存され、iCloudバックアップには含まれません。保護（DRM・暗号化）された動画は保存できません。権利者の許諾があるコンテンツのみ保存してください。
+            動画は端末にのみ保存され、iCloudバックアップには含まれません。保護（DRM・暗号化）された動画は保存できません。
           </AppText>
         </Section>
 
         <Section title="サポート">
-          <Row label="お問い合わせ・削除依頼" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
+          <Row label="お問い合わせ" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
           <Row label="利用規約" onPress={() => Linking.openURL(TERMS_URL)} />
           <Row label="プライバシーポリシー" onPress={() => Linking.openURL(PRIVACY_URL)} />
           <Row label="ライセンス" onPress={() => router.push('/licenses')} />
