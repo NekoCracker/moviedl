@@ -8,6 +8,7 @@ import { MediaTools } from 'media-tools';
 
 import { nextManualOrder, type MediaItem, type MediaType } from '@/db/library';
 import { mediaDirectory, mediaFile } from '@/download/storage';
+import { notifyJobsChanged } from '@/download/store';
 
 // iOS 標準（AVFoundation / expo-video）で扱える形式。それ以外は VLCKit で再生し、写真アプリへは MP4 変換が必要
 export const NATIVE_VIDEO_CONTAINERS = ['mp4', 'm4v', 'mov'];
@@ -106,15 +107,26 @@ export async function createThumbnail(
   const rel = `${THUMBS_DIR}/${item.id}-${Date.now()}.jpg`;
   thumbsDirectory();
   const source = mediaFile(item.filePath).uri;
+  const time = Math.max(0, timeSec);
+  let made = false;
   if (NATIVE_VIDEO_CONTAINERS.includes(item.container ?? '')) {
-    const result = await VideoThumbnails.getThumbnailAsync(source, { time: Math.max(0, timeSec) * 1000, quality: 0.7 });
-    new File(result.uri).move(mediaFile(rel));
-  } else if (MediaTools) {
-    // WebM・MKV など iOS 標準で読めない形式は FFmpeg で1フレーム取り出す
-    await MediaTools.thumbnail(source, Math.max(0, timeSec), 640, mediaFile(rel).uri);
-  } else {
-    return null;
+    try {
+      // 指定した時刻が長さを超える短い動画では失敗するので、そのときは先頭で作り直す
+      const result = await VideoThumbnails.getThumbnailAsync(source, { time: time * 1000, quality: 0.7 }).catch(() =>
+        VideoThumbnails.getThumbnailAsync(source, { time: 0, quality: 0.7 }),
+      );
+      new File(result.uri).move(mediaFile(rel));
+      made = true;
+    } catch {
+      // iOS 標準で読めないもの（MP4 でも中身が特殊なもの）は FFmpeg で作る
+    }
   }
+  if (!made && MediaTools) {
+    // WebM・MKV など iOS 標準で読めない形式は FFmpeg で1フレーム取り出す
+    await MediaTools.thumbnail(source, time, 640, mediaFile(rel).uri);
+    made = true;
+  }
+  if (!made) return null;
   if (item.thumbnailPath) {
     try {
       const old = mediaFile(item.thumbnailPath);
@@ -124,6 +136,7 @@ export async function createThumbnail(
     }
   }
   await db.runAsync('UPDATE videos SET thumbnail_path = ? WHERE id = ?', rel, item.id);
+  notifyJobsChanged();
   return rel;
 }
 

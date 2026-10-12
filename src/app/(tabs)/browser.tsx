@@ -253,8 +253,18 @@ export default function BrowserScreen() {
     if (wasActive) showTab(list.find((t) => t.isActive) ?? null);
   };
 
-  const onDownload = async (item: DetectedMedia, output: DownloadOutput, folderId: number) => {
-    setSheetVisible(false);
+  // シートが閉じ切る前に広告・許可ダイアログ・Alert を出すと、iOS では見えないシートが残って画面が操作できなくなる。
+  // そのため「ダウンロード」を押したら内容を覚えてシートを閉じ、閉じ終わってから続きを行う
+  const pendingDownload = useRef<{ item: DetectedMedia; output: DownloadOutput; folderId: number } | null>(null);
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startDownload = async () => {
+    const pending = pendingDownload.current;
+    pendingDownload.current = null;
+    if (pendingTimer.current) clearTimeout(pendingTimer.current);
+    pendingTimer.current = null;
+    if (!pending) return;
+    const { item, output, folderId } = pending;
     if (drmPage) {
       Alert.alert('保存できません', 'このページの動画は保護（DRM）されているため保存できません。');
       return;
@@ -270,9 +280,17 @@ export default function BrowserScreen() {
       kind: item.kind,
       output,
       folderId,
+      posterUrl: item.poster,
     });
     runQueue(db);
     Alert.alert('ダウンロードに追加しました', item.pageTitle);
+  };
+
+  const onDownload = (item: DetectedMedia, output: DownloadOutput, folderId: number) => {
+    pendingDownload.current = { item, output, folderId };
+    setSheetVisible(false);
+    // onDismiss が来なかったときの保険
+    pendingTimer.current = setTimeout(startDownload, 800);
   };
 
   return (
@@ -390,6 +408,7 @@ export default function BrowserScreen() {
         visible={sheetVisible}
         media={detected}
         onClose={() => setSheetVisible(false)}
+        onDismiss={startDownload}
         onDownload={onDownload}
       />
       <TabSwitcher

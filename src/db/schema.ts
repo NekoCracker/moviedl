@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 // フォルダ「未分類」の固定ID。削除不可。
 export const UNSORTED_FOLDER_ID = 1;
 
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 // SQLiteProvider の onInit から呼ばれる。PRAGMA user_version でスキーマの版を管理する。
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
@@ -118,6 +118,12 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       Date.now(),
     );
     currentVersion = 1;
+  }
+
+  if (currentVersion === 1) {
+    // ダウンロード中の一覧に、ページの動画のポスター画像を出す
+    await db.execAsync('ALTER TABLE downloads ADD COLUMN poster_url TEXT');
+    currentVersion = 2;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

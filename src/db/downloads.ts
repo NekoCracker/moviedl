@@ -16,17 +16,26 @@ export type DownloadStatus =
 
 export async function enqueueDownload(
   db: SQLiteDatabase,
-  input: { sourceUrl: string; pageUrl: string; title: string; kind: DetectedKind; output: DownloadOutput; folderId: number },
+  input: {
+    sourceUrl: string;
+    pageUrl: string;
+    title: string;
+    kind: DetectedKind;
+    output: DownloadOutput;
+    folderId: number;
+    posterUrl?: string | null;
+  },
 ): Promise<number> {
   const result = await db.runAsync(
-    `INSERT INTO downloads (source_url, page_url, title, kind, output, folder_id, status, progress, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?)`,
+    `INSERT INTO downloads (source_url, page_url, title, kind, output, folder_id, poster_url, status, progress, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?)`,
     input.sourceUrl,
     input.pageUrl,
     input.title.slice(0, 100),
     input.kind,
     input.output,
     input.folderId,
+    input.posterUrl ?? null,
     Date.now(),
   );
   return result.lastInsertRowId;

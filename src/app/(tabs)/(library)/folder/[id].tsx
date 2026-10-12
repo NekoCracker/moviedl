@@ -2,11 +2,12 @@ import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, Alert, AppState, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
+import { onJobsChanged } from '@/download/store';
 import {
   ALL_FOLDER_ID,
   folderHasPasscode,
@@ -107,6 +108,8 @@ export default function FolderScreen() {
       load();
     }, [load]),
   );
+  // ダウンロード完了・サムネイル作成・変換の完了で一覧を更新する
+  useEffect(() => onJobsChanged(load), [load]);
 
   const selectedItems = selection ? items.filter((i) => selection.has(i.id)) : [];
 

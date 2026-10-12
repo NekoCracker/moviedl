@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useSQLiteContext } from 'expo-sqlite';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
@@ -21,11 +22,14 @@ export function DetectedSheet({
   visible,
   media,
   onClose,
+  onDismiss,
   onDownload,
 }: {
   visible: boolean;
   media: DetectedMedia[];
   onClose: () => void;
+  // 閉じるアニメーションが終わったとき（このあとでないと広告や確認ダイアログを出せない）
+  onDismiss?: () => void;
   onDownload: (item: DetectedMedia, output: DownloadOutput, folderId: number) => void;
 }) {
   const db = useSQLiteContext();
@@ -51,7 +55,7 @@ export function DetectedSheet({
   const selected = media.find((m) => m.url === selectedUrl) ?? media[0];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} onDismiss={onDismiss}>
       <Pressable accessibilityLabel="閉じる" style={styles.backdrop} onPress={onClose} />
       <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.grabber} />
@@ -74,7 +78,13 @@ export function DetectedSheet({
                 accessibilityState={{ selected: isSelected }}
                 onPress={() => setSelectedUrl(item.url)}
                 style={[styles.item, isSelected && styles.itemSelected]}>
-                <View style={[styles.thumb, { backgroundColor: placeholderTint(index) }]} />
+                <View style={[styles.thumb, { backgroundColor: placeholderTint(index) }]}>
+                  {item.poster ? (
+                    <Image source={{ uri: item.poster }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                  ) : (
+                    <SymbolView name={item.kind === 'hls' ? 'play.rectangle' : 'film'} tintColor="rgba(255,255,255,0.7)" size={18} />
+                  )}
+                </View>
                 <View style={styles.itemText}>
                   <AppText variant="bodyBold" numberOfLines={1}>
                     {item.pageTitle}
@@ -165,7 +175,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   itemSelected: { backgroundColor: colors.surfaceRaised, borderColor: colors.accent },
-  thumb: { width: 88, height: 50, borderRadius: radius.sm },
+  thumb: { width: 88, height: 50, borderRadius: radius.sm, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   itemText: { flex: 1, gap: 3 },
   modes: { flexDirection: 'row', gap: 8 },
   mode: {

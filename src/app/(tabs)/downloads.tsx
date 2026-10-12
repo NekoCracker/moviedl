@@ -24,6 +24,7 @@ type DownloadRow = {
   error: string | null;
   created_at: number;
   thumbnail_path: string | null;
+  poster_url: string | null;
   folder_name: string | null;
 };
 
@@ -53,6 +54,8 @@ type Job = {
   error: string | null;
   createdAt: number;
   thumbnailPath: string | null;
+  // 保存前はページのポスター画像（あれば）
+  posterUrl: string | null;
   folderName: string | null;
 };
 
@@ -85,7 +88,7 @@ export default function DownloadsScreen() {
   const load = useCallback(async () => {
     const [downloads, conversions] = await Promise.all([
       db.getAllAsync<DownloadRow>(
-        `SELECT d.id, d.title, d.kind, d.output, d.status, d.progress, d.error, d.created_at, v.thumbnail_path, f.name AS folder_name
+        `SELECT d.id, d.title, d.kind, d.output, d.status, d.progress, d.error, d.created_at, v.thumbnail_path, d.poster_url, f.name AS folder_name
          FROM downloads d
          LEFT JOIN videos v ON v.id = d.video_id
          LEFT JOIN folders f ON f.id = COALESCE(v.folder_id, d.folder_id)
@@ -113,6 +116,7 @@ export default function DownloadsScreen() {
           error: d.error,
           createdAt: d.created_at,
           thumbnailPath: d.thumbnail_path,
+          posterUrl: d.poster_url,
           folderName: d.folder_name,
         }),
       ),
@@ -129,6 +133,7 @@ export default function DownloadsScreen() {
           error: c.error,
           createdAt: c.created_at,
           thumbnailPath: c.thumbnail_path,
+          posterUrl: null,
           folderName: c.folder_name,
         }),
       ),
@@ -286,7 +291,7 @@ function RoundButton({ icon, label, onPress }: { icon: 'pause.fill' | 'arrow.clo
 }
 
 function Thumb({ job }: { job: Job }) {
-  const uri = thumbnailUri(job.thumbnailPath);
+  const uri = thumbnailUri(job.thumbnailPath) ?? job.posterUrl;
   return (
     <View style={[styles.thumb, { backgroundColor: placeholderTint(job.id) }]}>
       {uri ? <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}

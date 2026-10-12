@@ -2,12 +2,13 @@ import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActionSheetIOS, Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AdBanner } from '@/ads/banner';
 import { AppText } from '@/components/app-text';
+import { onJobsChanged } from '@/download/store';
 import { FolderPasscodeModal, type FolderPasscodeMode } from '@/components/folder-passcode-modal';
 import { SegmentedControl } from '@/components/segmented-control';
 import {
@@ -75,6 +76,8 @@ export default function LibraryScreen() {
       load();
     }, [load]),
   );
+  // ダウンロード完了・サムネイル作成・変換の完了で一覧を更新する
+  useEffect(() => onJobsChanged(load), [load]);
 
   const onCreateFolder = () => {
     Alert.prompt('新しいフォルダ', 'フォルダ名を入力してください', async (name) => {
