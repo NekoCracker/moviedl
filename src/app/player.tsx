@@ -5,9 +5,10 @@ import { useEffect } from 'react';
 import { ActionSheetIOS, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { VlcVideoView } from 'media-tools';
+
 import { AppText } from '@/components/app-text';
 import { Scrubber } from '@/components/scrubber';
-import { seekTo } from '@/player/controls';
 import { usePlayback, usePlaybackTime } from '@/player/playback';
 import { indexForNext, loopLabels, nextLoopMode, playbackRates } from '@/player/queue';
 import { colors, radius } from '@/theme';
@@ -23,8 +24,8 @@ const sleepOptions = [
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
   const playback = usePlayback();
-  const { player, queue, index, current, playable, loop, shuffle, rate, sleepEndsAt, isPlaying } = playback;
-  const currentTime = usePlaybackTime(player);
+  const { player, queue, index, current, engine, duration, loop, shuffle, rate, sleepEndsAt, isPlaying } = playback;
+  const currentTime = usePlaybackTime();
 
   // キューが空になったら（全部削除された等）閉じる
   useEffect(() => {
@@ -52,7 +53,6 @@ export default function PlayerScreen() {
   const sleepEndLabel = sleepEndsAt
     ? `〜${new Date(sleepEndsAt).getHours()}:${String(new Date(sleepEndsAt).getMinutes()).padStart(2, '0')}`
     : 'オフ';
-  const duration = current?.durationSec ?? player.duration;
   const upNext = queue[indexForNext(index, queue.length)];
   const isAudio = current?.mediaType === 'audio';
 
@@ -73,16 +73,18 @@ export default function PlayerScreen() {
       </View>
 
       <View style={styles.videoBox}>
-        {playable && !isAudio ? (
-          <VideoView player={player} style={styles.video} contentFit="contain" allowsPictureInPicture nativeControls={false} />
-        ) : isAudio && playable ? (
+        {isAudio && engine !== 'none' ? (
           <View style={styles.audioArt}>
             <SymbolView name="music.note" tintColor={colors.textSecondary} size={64} />
           </View>
+        ) : engine === 'native' ? (
+          <VideoView player={player} style={styles.video} contentFit="contain" allowsPictureInPicture nativeControls={false} />
+        ) : engine === 'vlc' ? (
+          // WebM・MKV など。VLCKit が映像を描く（ピクチャ・イン・ピクチャは iOS 標準形式のみ）
+          <VlcVideoView style={styles.video} />
         ) : (
-          // TODO: VLCKit のネイティブモジュールを組み込んだら、ここで WebM/MKV 等を再生する（feature-spec.md §2-12）
           <AppText variant="caption" tone="secondary" style={styles.unsupported}>
-            {current ? `${(current.container ?? '').toUpperCase()} 形式の再生を準備しています` : ''}
+            {current ? `${(current.container ?? '').toUpperCase()} 形式はこのバージョンでは再生できません` : ''}
           </AppText>
         )}
       </View>
@@ -97,12 +99,12 @@ export default function PlayerScreen() {
       </View>
 
       <View style={styles.seekArea}>
-        <Scrubber position={currentTime} duration={duration} onSeek={(s) => seekTo(player, s)} />
+        <Scrubber position={currentTime} duration={duration} onSeek={playback.seek} />
       </View>
 
       <View style={styles.transport}>
         <IconButton icon="backward.end.fill" label="前へ" size={26} onPress={playback.previous} />
-        <IconButton icon="gobackward.10" label="10秒戻る" size={24} onPress={() => player.seekBy(-10)} />
+        <IconButton icon="gobackward.10" label="10秒戻る" size={24} onPress={() => playback.seekBy(-10)} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={isPlaying ? '一時停止' : '再生'}
@@ -110,7 +112,7 @@ export default function PlayerScreen() {
           style={styles.playButton}>
           <SymbolView name={isPlaying ? 'pause.fill' : 'play.fill'} tintColor="#000" size={30} />
         </Pressable>
-        <IconButton icon="goforward.10" label="10秒進む" size={24} onPress={() => player.seekBy(10)} />
+        <IconButton icon="goforward.10" label="10秒進む" size={24} onPress={() => playback.seekBy(10)} />
         <IconButton icon="forward.end.fill" label="次へ" size={26} onPress={playback.next} />
       </View>
 

@@ -112,7 +112,7 @@ EOF
   local fw="$WORK/fw-$name/MediaToolsCore.framework"
   rm -rf "$WORK/fw-$name" && mkdir -p "$fw/Headers" "$fw/Modules"
   "$cc" $cflags -I"$prefix/include" -fvisibility=hidden -c "$HERE/mt_core.c" -o "$WORK/mt_core-$name.o"
-  printf '_mt_probe\n_mt_convert\n_mt_concat\n' > "$WORK/exports.txt"
+  printf '_mt_probe\n_mt_convert\n_mt_concat\n_mt_frame\n_mt_free\n' > "$WORK/exports.txt"
   "$cc" -target "$target" -isysroot "$sysroot" -dynamiclib \
     -install_name @rpath/MediaToolsCore.framework/MediaToolsCore \
     -Wl,-exported_symbols_list,"$WORK/exports.txt" -Wl,-dead_strip \

@@ -35,6 +35,7 @@ type Events = {
 declare class MediaToolsNative extends NativeModule<Events> {
   probe(uri: string): Promise<ProbeResult>;
   convert(jobId: string, options: ConvertOptions): Promise<'done' | 'cancelled'>;
+  thumbnail(uri: string, timeSec: number, maxWidth: number, output: string): Promise<void>;
   concat(jobId: string, inputs: string[], output: string): Promise<'done' | 'cancelled'>;
   cancel(jobId: string): void;
   supportsContinuedProcessing(): boolean;

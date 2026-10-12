@@ -11,11 +11,10 @@ import { colors, placeholderTint, radius } from '@/theme';
 // 画面下に出す再生中の表示。タップでプレイヤーを開く。
 // compact は iOS 26 のタブバーに収まる小さい表示（スクロールでタブバーが縮んだとき）
 export function MiniPlayer({ compact = false }: { compact?: boolean }) {
-  const { player, current, isPlaying, togglePlay, next } = usePlayback();
-  const currentTime = usePlaybackTime(player);
+  const { current, duration, isPlaying, togglePlay, next } = usePlayback();
+  const currentTime = usePlaybackTime();
   if (!current) return null;
 
-  const duration = current.durationSec ?? player.duration;
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
   const thumb = thumbnailUri(current.thumbnailPath);
 

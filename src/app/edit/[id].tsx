@@ -1,7 +1,7 @@
-import { useEvent } from 'expo';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { VideoView } from 'expo-video';
+import { VlcVideoView } from 'media-tools';
 import { useEffect, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,11 +10,10 @@ import { AppText } from '@/components/app-text';
 import { RangeSlider } from '@/components/range-slider';
 import { Scrubber } from '@/components/scrubber';
 import { getMediaByIds, type MediaItem } from '@/db/library';
-import { mediaFile } from '@/download/storage';
-import { createThumbnail, NATIVE_VIDEO_CONTAINERS, queueConversion } from '@/library/media-actions';
-import { seekTo } from '@/player/controls';
+import { createThumbnail, queueConversion } from '@/library/media-actions';
 import { runConversions } from '@/convert/engine';
 import { usePlayback } from '@/player/playback';
+import { useEditPreview } from '@/player/use-edit-preview';
 import { colors, radius } from '@/theme';
 import { formatDuration } from '@/utils/format';
 
@@ -29,60 +28,38 @@ export default function EditScreen() {
   const [range, setRange] = useState<{ start: number; end: number } | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const player = useVideoPlayer(null, (p) => {
-    p.timeUpdateEventInterval = 0.25;
-    p.loop = false;
-  });
-
   useEffect(() => {
     getMediaByIds(db, [Number(params.id)]).then(([found]) => setItem(found ?? null));
   }, [db, params.id]);
 
-  const previewable = item ? NATIVE_VIDEO_CONTAINERS.includes(item.container ?? '') : false;
-
-  useEffect(() => {
-    if (!item || !previewable) return;
-    // 編集中はメインの再生を止める
-    playback.player.pause();
-    player.replaceAsync({ uri: mediaFile(item.filePath).uri });
-    // playback.player は同じオブジェクトのまま
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item, previewable, player]);
-
-  const { status } = useEvent(player, 'statusChange', { status: player.status });
-  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
-  const { currentTime } = useEvent(player, 'timeUpdate', {
-    currentTime: 0,
-    currentLiveTimestamp: null,
-    currentOffsetFromLive: null,
-    bufferedPosition: 0,
-  });
-  const duration = item?.durationSec ?? (player.duration > 0 ? player.duration : 0);
+  const preview = useEditPreview(item, playback.pause);
+  const { isPlaying, currentTime, duration } = preview;
+  const previewable = preview.kind !== 'none';
   const selected = range ?? { start: 0, end: duration };
 
   // トリミングのプレビューは選んだ範囲の終わりで止める
   useEffect(() => {
     if (mode === 'trim' && isPlaying && currentTime >= selected.end) {
-      player.pause();
+      preview.pause();
     }
-  }, [mode, isPlaying, currentTime, selected.end, player]);
+  }, [mode, isPlaying, currentTime, selected.end, preview]);
 
   const playRange = () => {
     if (isPlaying) {
-      player.pause();
+      preview.pause();
       return;
     }
     if (mode === 'trim' && (currentTime < selected.start || currentTime >= selected.end - 0.2)) {
-      seekTo(player, selected.start);
+      preview.seek(selected.start);
     }
-    player.play();
+    preview.play();
   };
 
   const saveThumbnail = async () => {
     if (!item) return;
     setSaving(true);
     try {
-      await createThumbnail(db, item, player.currentTime);
+      await createThumbnail(db, item, preview.getTime());
       await playback.refresh();
       router.back();
     } catch (e) {
@@ -141,15 +118,16 @@ export default function EditScreen() {
       </View>
 
       <View style={styles.videoBox}>
-        {previewable ? (
-          <VideoView player={player} style={styles.video} contentFit="contain" nativeControls={false} />
+        {preview.kind === 'native' ? (
+          <VideoView player={preview.player} style={styles.video} contentFit="contain" nativeControls={false} />
+        ) : preview.kind === 'vlc' ? (
+          <VlcVideoView style={styles.video} />
         ) : (
-          // TODO: VLCKit 組み込み後は WebM/MKV もここでプレビューする
           <AppText variant="caption" tone="secondary" style={styles.note}>
             {item ? 'この形式はプレビューできません。MP4に変換すると編集しやすくなります。' : ''}
           </AppText>
         )}
-        {previewable && status === 'loading' ? <ActivityIndicator style={StyleSheet.absoluteFill} color={colors.text} /> : null}
+        {previewable && preview.loading ? <ActivityIndicator style={StyleSheet.absoluteFill} color={colors.text} /> : null}
       </View>
 
       <AppText variant="body" numberOfLines={1} style={styles.title}>
@@ -166,8 +144,8 @@ export default function EditScreen() {
               position={currentTime}
               onChange={(start, end) => setRange({ start, end })}
               onScrub={(s) => {
-                player.pause();
-                seekTo(player, s);
+                preview.pause();
+                preview.seek(s);
               }}
             />
             <View style={styles.rangeLabels}>
@@ -184,7 +162,7 @@ export default function EditScreen() {
           </>
         ) : (
           <>
-            <Scrubber position={currentTime} duration={duration} onSeek={(s) => seekTo(player, s)} />
+            <Scrubber position={currentTime} duration={duration} onSeek={preview.seek} />
             <AppText variant="caption" tone="secondary" style={styles.hint}>
               バーを動かして、サムネイルにしたい場面で「決定」を押してください。
             </AppText>

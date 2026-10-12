@@ -789,3 +789,134 @@ end:
   remove(list_path);
   return status;
 }
+
+// ---------------------------------------------------------------- frame
+
+MT_EXPORT void mt_free(void *ptr) { av_free(ptr); }
+
+MT_EXPORT int mt_frame(const char *input, double time_sec, int max_width, unsigned char **rgba, int *width, int *height,
+                       char *error, int error_len) {
+  *rgba = NULL;
+  *width = *height = 0;
+  AVFormatContext *fmt = NULL;
+  AVCodecContext *dec = NULL;
+  AVPacket *pkt = av_packet_alloc();
+  AVFrame *frame = av_frame_alloc();
+  AVFrame *picked = NULL;
+  struct SwsContext *sws = NULL;
+  int status = MT_ERROR;
+
+  int ret = avformat_open_input(&fmt, input, NULL, NULL);
+  if (ret < 0) {
+    set_av_error(error, error_len, "ファイルを開けません", ret);
+    goto end;
+  }
+  if ((ret = avformat_find_stream_info(fmt, NULL)) < 0) {
+    set_av_error(error, error_len, "形式を判別できません", ret);
+    goto end;
+  }
+  int vi = -1;
+  for (unsigned i = 0; i < fmt->nb_streams; i++) {
+    AVStream *st = fmt->streams[i];
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && !(st->disposition & AV_DISPOSITION_ATTACHED_PIC)) {
+      vi = (int)i;
+      break;
+    }
+  }
+  if (vi < 0) {
+    set_error(error, error_len, "映像がありません");
+    goto end;
+  }
+  AVStream *st = fmt->streams[vi];
+  if (open_decoder(st, &dec, error, error_len) != MT_OK) goto end;
+
+  double file_start = fmt->start_time != AV_NOPTS_VALUE ? fmt->start_time / (double)AV_TIME_BASE : 0;
+  if (time_sec < 0) time_sec = 0;
+  if (fmt->duration > 0) {
+    double dur = fmt->duration / (double)AV_TIME_BASE;
+    if (time_sec > dur - 0.1) time_sec = dur > 0.1 ? dur - 0.1 : 0;
+  }
+  int64_t target = (int64_t)((file_start + time_sec) * AV_TIME_BASE);
+  if (time_sec > 0 && av_seek_frame(fmt, -1, target, AVSEEK_FLAG_BACKWARD) < 0) {
+    av_seek_frame(fmt, -1, fmt->start_time != AV_NOPTS_VALUE ? fmt->start_time : 0, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_BYTE);
+  }
+  double target_sec = file_start + time_sec;
+
+  // 目的の時刻を越えた最初のフレームを使う（それまでのフレームも、見つからなかったときの代わりに持っておく）
+  int done = 0, flushing = 0, decoded = 0;
+  while (!done) {
+    if (!flushing) {
+      ret = av_read_frame(fmt, pkt);
+      if (ret < 0) {
+        flushing = 1;
+        avcodec_send_packet(dec, NULL);
+      } else if (pkt->stream_index != vi) {
+        av_packet_unref(pkt);
+        continue;
+      } else {
+        ret = avcodec_send_packet(dec, pkt);
+        av_packet_unref(pkt);
+        if (ret < 0 && ret != AVERROR(EAGAIN)) continue;
+      }
+    }
+    while (1) {
+      ret = avcodec_receive_frame(dec, frame);
+      if (ret == AVERROR(EAGAIN)) break;
+      if (ret < 0) {
+        done = 1;
+        break;
+      }
+      decoded++;
+      int64_t pts = frame->best_effort_timestamp;
+      double t = pts != AV_NOPTS_VALUE ? pts * av_q2d(st->time_base) : target_sec;
+      if (!picked) picked = av_frame_alloc();
+      av_frame_unref(picked);
+      av_frame_move_ref(picked, frame);
+      // 600フレーム解いても届かない（シークがずれた）ときはそこで止める
+      if (t >= target_sec - 0.001 || decoded > 600) {
+        done = 1;
+        break;
+      }
+    }
+    if (flushing && ret == AVERROR(EAGAIN)) break;
+  }
+  if (!picked || !picked->width) {
+    set_error(error, error_len, "フレームを取り出せませんでした");
+    goto end;
+  }
+
+  int w = picked->width, h = picked->height;
+  // 正方形でない画素（アナモルフィック）は見た目の比率に直す
+  AVRational sar = picked->sample_aspect_ratio.num ? picked->sample_aspect_ratio : st->sample_aspect_ratio;
+  if (sar.num > 0 && sar.den > 0 && sar.num != sar.den) w = (int)lround(w * av_q2d(sar));
+  if (max_width > 0 && w > max_width) {
+    h = (int)lround((double)h * max_width / w);
+    w = max_width;
+  }
+  w &= ~1;
+  h &= ~1;
+  if (w <= 0 || h <= 0) goto end;
+  sws = sws_getContext(picked->width, picked->height, picked->format, w, h, AV_PIX_FMT_RGBA, SWS_BICUBIC, NULL, NULL, NULL);
+  if (!sws) {
+    set_error(error, error_len, "画像に変換できません");
+    goto end;
+  }
+  unsigned char *buf = av_malloc((size_t)w * h * 4);
+  if (!buf) goto end;
+  uint8_t *dst[4] = {buf, NULL, NULL, NULL};
+  int dst_stride[4] = {w * 4, 0, 0, 0};
+  sws_scale(sws, (const uint8_t *const *)picked->data, picked->linesize, 0, picked->height, dst, dst_stride);
+  *rgba = buf;
+  *width = w;
+  *height = h;
+  status = MT_OK;
+
+end:
+  sws_freeContext(sws);
+  av_frame_free(&picked);
+  av_frame_free(&frame);
+  av_packet_free(&pkt);
+  avcodec_free_context(&dec);
+  avformat_close_input(&fmt);
+  return status;
+}

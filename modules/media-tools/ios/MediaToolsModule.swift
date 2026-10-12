@@ -76,6 +76,43 @@ public final class MediaToolsModule: Module {
       }
     }
 
+    // timeSec 付近の1フレームを JPEG で output に書き出す（サムネイル。WebM・MKV・AV1 も扱える）
+    AsyncFunction("thumbnail") { (uri: String, timeSec: Double, maxWidth: Int, output: String, promise: Promise) in
+      let path = Self.path(from: uri)
+      let outPath = Self.path(from: output)
+      self.queue.async {
+        var pixels: UnsafeMutablePointer<UInt8>?
+        var width: Int32 = 0
+        var height: Int32 = 0
+        var error = [CChar](repeating: 0, count: 512)
+        let status = mt_frame(path, timeSec, Int32(maxWidth), &pixels, &width, &height, &error, Int32(error.count))
+        guard status == Int32(MT_OK), let pixels else {
+          promise.reject("ERR_THUMBNAIL", String(cString: error))
+          return
+        }
+        defer { mt_free(pixels) }
+        let w = Int(width), h = Int(height)
+        guard
+          let provider = CGDataProvider(data: Data(bytes: pixels, count: w * h * 4) as CFData),
+          let image = CGImage(
+            width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent),
+          let jpeg = UIImage(cgImage: image).jpegData(compressionQuality: 0.75)
+        else {
+          promise.reject("ERR_THUMBNAIL", "画像を作れませんでした")
+          return
+        }
+        do {
+          try jpeg.write(to: URL(fileURLWithPath: outPath), options: .atomic)
+          promise.resolve(nil)
+        } catch {
+          promise.reject("ERR_THUMBNAIL", error.localizedDescription)
+        }
+      }
+    }
+
     Function("cancel") { (jobId: String) in
       self.lock.lock()
       let job = self.jobs[jobId]

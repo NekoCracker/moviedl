@@ -4,6 +4,7 @@ import { Directory, File } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { MediaTools } from 'media-tools';
 
 import { nextManualOrder, type MediaItem, type MediaType } from '@/db/library';
 import { mediaDirectory, mediaFile } from '@/download/storage';
@@ -95,13 +96,25 @@ export async function queueConversion(db: SQLiteDatabase, videoId: number, kind:
 // ---- サムネイル ----
 
 // 動画の timeSec 秒の場面をサムネイルにする。iOS 標準で読めない形式は VLCKit 側で作る（未対応の間は null）
-export async function createThumbnail(db: SQLiteDatabase, item: Pick<MediaItem, 'id' | 'filePath' | 'container' | 'thumbnailPath'>, timeSec = 1): Promise<string | null> {
-  if (!NATIVE_VIDEO_CONTAINERS.includes(item.container ?? '')) return null;
-  const result = await VideoThumbnails.getThumbnailAsync(mediaFile(item.filePath).uri, { time: Math.max(0, timeSec) * 1000, quality: 0.7 });
+export async function createThumbnail(
+  db: SQLiteDatabase,
+  item: Pick<MediaItem, 'id' | 'filePath' | 'container' | 'thumbnailPath'> & { mediaType?: MediaType },
+  timeSec = 1,
+): Promise<string | null> {
+  if (item.mediaType === 'audio') return null;
   // 同じ名前だと expo-image のキャッシュで古い画像が出るので、作るたびに名前を変える
   const rel = `${THUMBS_DIR}/${item.id}-${Date.now()}.jpg`;
   thumbsDirectory();
-  new File(result.uri).move(mediaFile(rel));
+  const source = mediaFile(item.filePath).uri;
+  if (NATIVE_VIDEO_CONTAINERS.includes(item.container ?? '')) {
+    const result = await VideoThumbnails.getThumbnailAsync(source, { time: Math.max(0, timeSec) * 1000, quality: 0.7 });
+    new File(result.uri).move(mediaFile(rel));
+  } else if (MediaTools) {
+    // WebM・MKV など iOS 標準で読めない形式は FFmpeg で1フレーム取り出す
+    await MediaTools.thumbnail(source, Math.max(0, timeSec), 640, mediaFile(rel).uri);
+  } else {
+    return null;
+  }
   if (item.thumbnailPath) {
     try {
       const old = mediaFile(item.thumbnailPath);

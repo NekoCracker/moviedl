@@ -222,14 +222,12 @@ export default function FolderScreen() {
           if (requirePremium('trim')) router.push({ pathname: '/edit/[id]', params: { id: String(item.id), mode: 'trim' } });
         },
       });
-      if (NATIVE_VIDEO_CONTAINERS.includes(item.container ?? '')) {
-        actions.push({
-          label: 'サムネイルを選ぶ',
-          run: () => {
-            if (requirePremium('thumbnail')) router.push({ pathname: '/edit/[id]', params: { id: String(item.id), mode: 'thumbnail' } });
-          },
-        });
-      }
+      actions.push({
+        label: 'サムネイルを選ぶ',
+        run: () => {
+          if (requirePremium('thumbnail')) router.push({ pathname: '/edit/[id]', params: { id: String(item.id), mode: 'thumbnail' } });
+        },
+      });
       actions.push({ label: '音声を書き出す（m4a）', run: () => queue(item, 'm4a') });
       actions.push({ label: '音声を書き出す（mp3）', run: () => queue(item, 'mp3') });
     }

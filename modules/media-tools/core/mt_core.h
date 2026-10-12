@@ -66,6 +66,13 @@ int mt_convert(const MTConvertOptions *options, MTProgressCallback progress, voi
 int mt_concat(const char *const *inputs, int count, const char *output, volatile int *cancel, char *error,
               int error_len);
 
+// time_sec 付近の1フレームを RGBA（1行 = width*4 バイト）で取り出す。サムネイル用。
+// 幅が max_width を超えるときは縮める（0 なら元の大きさ）。*rgba は mt_free で解放する
+int mt_frame(const char *input, double time_sec, int max_width, unsigned char **rgba, int *width, int *height,
+             char *error, int error_len);
+
+void mt_free(void *ptr);
+
 #ifdef __cplusplus
 }
 #endif
