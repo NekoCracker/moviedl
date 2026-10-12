@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+modules/media-tools/core/.build/
+modules/media-tools/core/dist/
+modules/media-tools/ios/Frameworks/

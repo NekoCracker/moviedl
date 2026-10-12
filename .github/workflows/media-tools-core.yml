@@ -1,0 +1,43 @@
+# 変換エンジン（FFmpeg + mt_core）の iOS 用フレームワークをビルドして Release に置く。
+# アプリの EAS Build はここで作った zip をダウンロードして組み込む（modules/media-tools/ios/MediaTools.podspec）。
+name: media-tools-core
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - modules/media-tools/core/**
+      - .github/workflows/media-tools-core.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: brew install meson ninja nasm pkg-config
+      - name: Cache third-party builds
+        uses: actions/cache@v4
+        with:
+          path: modules/media-tools/core/.build
+          key: core-${{ hashFiles('modules/media-tools/core/build-ios.sh') }}
+      - name: Build xcframework
+        run: modules/media-tools/core/build-ios.sh
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(cat modules/media-tools/core/VERSION)
+          TAG="media-tools-core-v$VERSION"
+          ZIP=modules/media-tools/core/dist/MediaToolsCore.xcframework.zip
+          shasum -a 256 "$ZIP"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" --title "$TAG" --notes "変換エンジン（FFmpeg LGPL + dav1d + LAME + mt_core）の iOS 用フレームワーク"
+          fi
