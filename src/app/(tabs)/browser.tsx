@@ -10,7 +10,7 @@ import { BookmarksSheet } from '@/components/browser/bookmarks-sheet';
 import { StartPage } from '@/components/browser/start-page';
 import { TabSwitcher } from '@/components/browser/tab-switcher';
 import { DetectedSheet } from '@/components/detected-sheet';
-import { onBrowsingDataCleared } from '@/browser/events';
+import { onBrowsingDataCleared, onOpenInBrowserRequested, takePendingBrowserUrl } from '@/browser/events';
 import { detectorScript, linkMenuScript, parseDetectorMessage, toNavigableUrl, type DetectedMedia } from '@/browser/detector';
 import {
   addBookmark,
@@ -72,6 +72,8 @@ export default function BrowserScreen() {
     [],
   );
   const recordedUrlRef = useRef<string | null>(null);
+  const tabsLoadedRef = useRef(false);
+  const newTabRef = useRef<((url: string, priv: boolean) => Promise<void>) | null>(null);
 
   const isStartPage = currentUrl === START_PAGE_URL;
   const isPrivate = activeTab?.isPrivate ?? false;
@@ -106,6 +108,10 @@ export default function BrowserScreen() {
       setTabs(list);
       setBookmarks(marks);
       showTab(list.find((t) => t.isActive) ?? null);
+      tabsLoadedRef.current = true;
+      // ほかの画面から「ブラウザで開く」を頼まれていたら、新しいタブで開く
+      const pending = takePendingBrowserUrl();
+      if (pending) newTabRef.current?.(pending, false);
     })();
     return () => {
       cancelled = true;
@@ -182,6 +188,21 @@ export default function BrowserScreen() {
     const list = await reloadTabs();
     showTab(list.find((t) => t.id === id) ?? null);
   };
+
+  useEffect(() => {
+    newTabRef.current = newTab;
+  });
+
+  // ブラウザ画面が開いたままのときに「ブラウザで開く」を頼まれた場合
+  useEffect(
+    () =>
+      onOpenInBrowserRequested(() => {
+        if (!tabsLoadedRef.current) return;
+        const url = takePendingBrowserUrl();
+        if (url) newTabRef.current?.(url, false);
+      }),
+    [],
+  );
 
   const onMessage = (event: WebViewMessageEvent) => {
     const msg = parseDetectorMessage(event.nativeEvent.data);

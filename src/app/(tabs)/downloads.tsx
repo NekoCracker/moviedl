@@ -1,17 +1,20 @@
 import { Image } from 'expo-image';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { requestOpenInBrowser } from '@/browser/events';
 import { AppText } from '@/components/app-text';
 import { cancelConversion, liveIdForConversion, pauseConversion, resumeConversion, type ConversionKind, type ConversionStatus } from '@/convert/engine';
 import type { DownloadStatus } from '@/db/downloads';
 import { cancelJob, pauseJob, resumeJob } from '@/download/engine';
 import { thumbnailUri } from '@/library/media-actions';
 import { onJobsChanged, useLiveProgress } from '@/download/store';
+import { usePlayback } from '@/player/playback';
+import { folderUnlock } from '@/security/folder-unlock';
 import { colors, placeholderTint, radius } from '@/theme';
 
 type DownloadRow = {
@@ -26,6 +29,8 @@ type DownloadRow = {
   thumbnail_path: string | null;
   poster_url: string | null;
   folder_name: string | null;
+  page_url: string | null;
+  video_id: number | null;
 };
 
 type ConversionRow = {
@@ -38,6 +43,7 @@ type ConversionRow = {
   title: string | null;
   thumbnail_path: string | null;
   folder_name: string | null;
+  video_id: number | null;
 };
 
 // ダウンロードと変換（MP4変換・音声の書き出し・トリミング）を同じ一覧に並べる
@@ -57,6 +63,9 @@ type Job = {
   // 保存前はページのポスター画像（あれば）
   posterUrl: string | null;
   folderName: string | null;
+  // タップしたときの行き先: 完了なら保存した動画、ダウンロード中なら元のページ
+  videoId: number | null;
+  pageUrl: string | null;
 };
 
 const ACTIVE: DownloadStatus[] = ['queued', 'downloading', 'paused', 'converting', 'error', 'blocked'];
@@ -84,18 +93,52 @@ export default function DownloadsScreen() {
   const insets = useSafeAreaInsets();
   const live = useLiveProgress();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const playback = usePlayback();
+
+  // 完了した行: 保存した動画を、その動画のフォルダの並びで再生する
+  const playDone = async (job: Job) => {
+    const video = job.videoId
+      ? await db.getFirstAsync<{ id: number; folder_id: number; media_type: 'video' | 'audio'; has_passcode: number }>(
+          `SELECT v.id, v.folder_id, v.media_type, f.has_passcode
+           FROM videos v JOIN folders f ON f.id = v.folder_id WHERE v.id = ?`,
+          job.videoId,
+        )
+      : null;
+    if (!video) {
+      Alert.alert('動画が見つかりません', 'ライブラリから削除されたか、まだ保存が終わっていません。');
+      return;
+    }
+    if (video.has_passcode === 1 && !folderUnlock.isUnlocked(video.folder_id)) {
+      Alert.alert('ロックされたフォルダの動画です', 'ライブラリからフォルダを開いて、パスコードを入力してから再生してください。');
+      return;
+    }
+    await playback.start({
+      folderId: video.folder_id,
+      type: video.media_type,
+      sort: { key: 'created_at', dir: 'desc' },
+      startId: video.id,
+    });
+    router.push('/player');
+  };
+
+  // ダウンロード中の行: ダウンロード元のページをブラウザで開く
+  const openSource = (job: Job) => {
+    if (!job.pageUrl) return;
+    requestOpenInBrowser(job.pageUrl);
+    router.navigate('/browser');
+  };
 
   const load = useCallback(async () => {
     const [downloads, conversions] = await Promise.all([
       db.getAllAsync<DownloadRow>(
-        `SELECT d.id, d.title, d.kind, d.output, d.status, d.progress, d.error, d.created_at, v.thumbnail_path, d.poster_url, f.name AS folder_name
+        `SELECT d.id, d.title, d.kind, d.output, d.status, d.progress, d.error, d.created_at, v.thumbnail_path, d.poster_url, f.name AS folder_name, d.page_url, v.id AS video_id
          FROM downloads d
          LEFT JOIN videos v ON v.id = d.video_id
          LEFT JOIN folders f ON f.id = COALESCE(v.folder_id, d.folder_id)
          ORDER BY d.created_at DESC LIMIT 200`,
       ),
       db.getAllAsync<ConversionRow>(
-        `SELECT c.id, c.kind, c.status, c.progress, c.error, c.created_at, v.title, v.thumbnail_path, f.name AS folder_name
+        `SELECT c.id, c.kind, c.status, c.progress, c.error, c.created_at, v.title, v.thumbnail_path, f.name AS folder_name, v.id AS video_id
          FROM conversions c
          LEFT JOIN videos v ON v.id = c.video_id
          LEFT JOIN folders f ON f.id = v.folder_id
@@ -118,6 +161,8 @@ export default function DownloadsScreen() {
           thumbnailPath: d.thumbnail_path,
           posterUrl: d.poster_url,
           folderName: d.folder_name,
+          videoId: d.video_id,
+          pageUrl: d.page_url,
         }),
       ),
       ...conversions.map(
@@ -135,6 +180,8 @@ export default function DownloadsScreen() {
           thumbnailPath: c.thumbnail_path,
           posterUrl: null,
           folderName: c.folder_name,
+          videoId: c.video_id,
+          pageUrl: null,
         }),
       ),
     ];
@@ -198,6 +245,7 @@ export default function DownloadsScreen() {
           section.key === 'active' ? (
             <ActiveRow
               job={item}
+              onOpen={item.pageUrl ? () => openSource(item) : undefined}
               fraction={live[item.liveId]?.fraction ?? item.progress}
               detail={live[item.liveId]?.detail}
               onPause={() => (item.source === 'download' ? pauseJob(db, item.id) : pauseConversion(db, item.id))}
@@ -205,7 +253,7 @@ export default function DownloadsScreen() {
               onCancel={() => (item.source === 'download' ? cancelJob(db, item.id) : cancelConversion(db, item.id))}
             />
           ) : (
-            <DoneRow job={item} />
+            <DoneRow job={item} onOpen={() => playDone(item)} />
           )
         }
         ListFooterComponent={
@@ -246,10 +294,12 @@ function ActiveRow({
   onPause,
   onResume,
   onCancel,
+  onOpen,
 }: {
   job: Job;
   fraction: number;
   detail?: string;
+  onOpen?: () => void;
   onPause: () => void;
   onResume: () => void;
   onCancel: () => void;
@@ -258,7 +308,11 @@ function ActiveRow({
   const canPause = job.status === 'downloading' || job.status === 'queued' || (job.source === 'conversion' && job.status === 'converting');
   const canResume = job.status === 'paused' || job.status === 'error';
   return (
-    <View style={styles.card}>
+    <Pressable
+      accessibilityHint={onOpen ? 'ダウンロード元のページを開く' : undefined}
+      disabled={!onOpen}
+      onPress={onOpen}
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
       <View style={styles.cardRow}>
         <Thumb job={job} />
         <View style={styles.cardText}>
@@ -278,7 +332,7 @@ function ActiveRow({
           <View style={[styles.bar, { width: `${Math.round(fraction * 100)}%` }]} />
         </View>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -299,9 +353,13 @@ function Thumb({ job }: { job: Job }) {
   );
 }
 
-function DoneRow({ job }: { job: Job }) {
+function DoneRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
   return (
-    <View style={styles.doneRow}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${job.title ?? '無題'}を再生`}
+      onPress={onOpen}
+      style={({ pressed }) => [styles.doneRow, pressed && styles.pressed]}>
       <Thumb job={job} />
       <View style={styles.cardText}>
         <AppText variant="body" numberOfLines={1}>
@@ -312,12 +370,13 @@ function DoneRow({ job }: { job: Job }) {
         </AppText>
       </View>
       <SymbolView name="checkmark" tintColor={colors.success} size={18} weight="bold" accessibilityLabel="完了" />
-    </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  pressed: { opacity: 0.7 },
   title: { paddingHorizontal: 20, paddingBottom: 12 },
   list: { paddingHorizontal: 16, paddingBottom: 120, gap: 10 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
