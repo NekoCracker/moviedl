@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/app-text';
 import { ClearBrowsingDataSheet } from '@/components/clear-browsing-data-sheet';
 import { PasscodePad } from '@/components/passcode-pad';
-import { MANAGE_SUBSCRIPTIONS_URL, PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
+import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL } from '@/config/links';
 import { loadSettings, saveSetting, type AppSettings } from '@/db/settings';
 import { purchasesAvailable, restore } from '@/premium/purchases';
 import { openPaywall, setDevPremiumOverride, usePremium } from '@/premium/store';
@@ -133,7 +133,6 @@ export default function SettingsScreen() {
             <Row label="プレミアムにアップグレード" onPress={() => openPaywall('settings')} />
           )}
           <Row label="購入を復元" onPress={onRestore} />
-          <Row label="サブスクリプションの管理" onPress={() => Linking.openURL(MANAGE_SUBSCRIPTIONS_URL)} />
           {__DEV__ ? (
             // 開発ビルドだけに出す。本番では表示されない
             <Row label="プレミアム（テスト用）">

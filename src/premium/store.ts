@@ -1,4 +1,4 @@
-// プレミアム（サブスク・買い切り）の状態と、購入画面の表示（feature-spec.md §3）
+// プレミアム（買い切り）の状態と、購入画面の表示（feature-spec.md §3）
 import { useSyncExternalStore } from 'react';
 
 export type PremiumFeature = 'ads' | 'folderPasscode' | 'trim' | 'thumbnail';

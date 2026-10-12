@@ -2,4 +2,3 @@
 export const SUPPORT_EMAIL = '[サポート用メールアドレス]';
 export const TERMS_URL = '[利用規約のURL]';
 export const PRIVACY_URL = '[プライバシーポリシーのURL]';
-export const MANAGE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions';

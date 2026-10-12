@@ -4,8 +4,10 @@ import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleS
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
-import { MANAGE_SUBSCRIPTIONS_URL, PRIVACY_URL, TERMS_URL } from '@/config/links';
-import { loadPlans, purchase, purchasesAvailable, restore, type Plans } from '@/premium/purchases';
+import { PRIVACY_URL, TERMS_URL } from '@/config/links';
+import { type PurchasesPackage } from 'react-native-purchases';
+
+import { loadLifetime, purchase, purchasesAvailable, restore } from '@/premium/purchases';
 import { closePaywall, usePremiumState } from '@/premium/store';
 import { colors, radius } from '@/theme';
 
@@ -15,8 +17,6 @@ const perks: { title: string; desc: string; icon: SFSymbol }[] = [
   { title: '動画のトリミング', desc: '必要な部分だけを切り出して保存', icon: 'scissors' },
   { title: 'サムネイルを選べる', desc: '動画の好きな場面をサムネイルに', icon: 'photo' },
 ];
-
-type PlanId = 'lifetime' | 'monthly';
 
 // 購入画面。ルートに1つだけ置き、openPaywall() で開く。
 export function PaywallHost() {
@@ -31,25 +31,23 @@ export function PaywallHost() {
 
 function Paywall() {
   const insets = useSafeAreaInsets();
-  const [plans, setPlans] = useState<Plans | null>(null);
-  const [selected, setSelected] = useState<PlanId>('lifetime');
+  const [lifetime, setLifetime] = useState<PurchasesPackage | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    loadPlans()
-      .then((p) => !cancelled && setPlans(p))
-      .catch(() => !cancelled && setPlans({ lifetime: null, monthly: null }));
+    loadLifetime()
+      .then((p) => !cancelled && setLifetime(p))
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const lifetimePrice = plans?.lifetime?.product.priceString ?? '¥2,600';
-  const monthlyPrice = plans?.monthly?.product.priceString ?? '¥280';
+  const price = lifetime?.product.priceString ?? '¥980';
 
   const onPurchase = async () => {
-    const pkg = selected === 'lifetime' ? plans?.lifetime : plans?.monthly;
+    const pkg = lifetime;
     if (!purchasesAvailable() || !pkg) {
       Alert.alert('購入できません', 'App Storeに接続できませんでした。通信環境を確認して、もう一度お試しください。');
       return;
@@ -59,16 +57,6 @@ function Paywall() {
       const outcome = await purchase(pkg);
       if (outcome === 'purchased') {
         Alert.alert('ありがとうございます', 'プレミアムが有効になりました。');
-        closePaywall();
-      } else if (outcome === 'purchased-while-subscribed') {
-        Alert.alert(
-          'ありがとうございます',
-          'プレミアムが有効になりました。月額プランは自動では解約されません。iPhoneの「設定」→「Apple ID」→「サブスクリプション」から解約してください。',
-          [
-            { text: 'あとで' },
-            { text: '解約の画面を開く', onPress: () => Linking.openURL(MANAGE_SUBSCRIPTIONS_URL) },
-          ],
-        );
         closePaywall();
       } else if (outcome === 'pending') {
         Alert.alert('承認待ち', '購入の承認が済むと、自動でプレミアムが有効になります。');
@@ -131,22 +119,18 @@ function Paywall() {
           ))}
         </View>
 
-        <View style={styles.plans}>
-          <PlanCard
-            title="買い切り"
-            desc="一度の購入でずっと使える"
-            price={lifetimePrice}
-            selected={selected === 'lifetime'}
-            onPress={() => setSelected('lifetime')}
-          />
-          <PlanCard
-            title="月額プラン"
-            desc="いつでも解約可能・自動更新"
-            price={monthlyPrice}
-            unit=" / 月"
-            selected={selected === 'monthly'}
-            onPress={() => setSelected('monthly')}
-          />
+        <View style={styles.plan}>
+          <View style={styles.planText}>
+            <AppText variant="bodyBold" style={styles.planTitle}>
+              買い切り
+            </AppText>
+            <AppText variant="small" tone="secondary">
+              一度の購入でずっと使えます。追加の料金はかかりません
+            </AppText>
+          </View>
+          <AppText variant="title" style={styles.price}>
+            {price}
+          </AppText>
         </View>
 
         <Pressable
@@ -157,13 +141,9 @@ function Paywall() {
           style={[styles.buy, busy && styles.busy]}>
           {busy ? <ActivityIndicator color={colors.onAccent} /> : null}
           <AppText variant="bodyBold" tone="onAccent" style={styles.buyText}>
-            購入する
+            {price}で購入する
           </AppText>
         </Pressable>
-
-        <AppText variant="small" tone="muted" style={styles.legal}>
-          月額プランは期間終了の24時間前までに解約しない限り自動更新されます。解約はiPhoneの設定アプリから行えます。
-        </AppText>
 
         <View style={styles.links}>
           <Pressable accessibilityRole="button" disabled={busy} onPress={onRestore} style={styles.link}>
@@ -187,48 +167,6 @@ function Paywall() {
   );
 }
 
-function PlanCard({
-  title,
-  desc,
-  price,
-  unit,
-  selected,
-  onPress,
-}: {
-  title: string;
-  desc: string;
-  price: string;
-  unit?: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      accessibilityLabel={`${title}、${price}${unit ?? ''}`}
-      onPress={onPress}
-      style={[styles.plan, selected && styles.planSelected]}>
-      <View style={styles.planText}>
-        <AppText variant="bodyBold" style={styles.planTitle}>
-          {title}
-        </AppText>
-        <AppText variant="small" tone="secondary">
-          {desc}
-        </AppText>
-      </View>
-      <AppText variant="title" style={styles.price}>
-        {price}
-        {unit ? (
-          <AppText variant="small" tone="secondary">
-            {unit}
-          </AppText>
-        ) : null}
-      </AppText>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: 20 },
@@ -240,19 +178,18 @@ const styles = StyleSheet.create({
   perk: { flexDirection: 'row', gap: 14, alignItems: 'center' },
   perkIcon: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   perkText: { flex: 1, gap: 2 },
-  plans: { gap: 10, marginTop: 28 },
   plan: {
+    marginTop: 28,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: '#2E3138',
-    backgroundColor: '#16181C',
+    borderColor: colors.accent,
+    backgroundColor: '#1F1A15',
     paddingVertical: 14,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  planSelected: { borderColor: colors.accent, backgroundColor: '#1F1A15' },
   planText: { gap: 2, flex: 1 },
   planTitle: { fontSize: 16 },
   price: { fontSize: 20 },
