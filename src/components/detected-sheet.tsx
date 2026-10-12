@@ -1,0 +1,157 @@
+import { useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { AppText } from '@/components/app-text';
+import type { DetectedMedia } from '@/browser/detector';
+import type { DownloadOutput } from '@/db/downloads';
+import { colors, placeholderTint, radius } from '@/theme';
+
+const outputOptions: { value: DownloadOutput; label: string }[] = [
+  { value: 'video', label: '動画' },
+  { value: 'm4a', label: '音声 m4a' },
+  { value: 'mp3', label: '音声 mp3' },
+];
+
+export function DetectedSheet({
+  visible,
+  media,
+  onClose,
+  onDownload,
+}: {
+  visible: boolean;
+  media: DetectedMedia[];
+  onClose: () => void;
+  onDownload: (item: DetectedMedia, output: DownloadOutput) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
+  const [output, setOutput] = useState<DownloadOutput>('video');
+  const selected = media.find((m) => m.url === selectedUrl) ?? media[0];
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable accessibilityLabel="閉じる" style={styles.backdrop} onPress={onClose} />
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={styles.grabber} />
+        <View style={styles.headerRow}>
+          <AppText variant="title" accessibilityRole="header">
+            検出した動画
+          </AppText>
+          <AppText variant="caption" tone="secondary">
+            {media.length}件
+          </AppText>
+        </View>
+
+        <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+          {media.map((item, index) => {
+            const isSelected = item.url === selected?.url;
+            return (
+              <Pressable
+                key={item.url}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isSelected }}
+                onPress={() => setSelectedUrl(item.url)}
+                style={[styles.item, isSelected && styles.itemSelected]}>
+                <View style={[styles.thumb, { backgroundColor: placeholderTint(index) }]} />
+                <View style={styles.itemText}>
+                  <AppText variant="bodyBold" numberOfLines={1}>
+                    {item.pageTitle}
+                  </AppText>
+                  <AppText variant="small" tone="secondary" numberOfLines={1}>
+                    {item.kind === 'hls' ? 'HLS' : (item.container ?? '不明').toUpperCase()}・{hostOf(item.url)}
+                  </AppText>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.modes} accessibilityRole="radiogroup" accessibilityLabel="保存形式">
+          {outputOptions.map((option) => {
+            const isSelected = option.value === output;
+            return (
+              <Pressable
+                key={option.value}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isSelected }}
+                onPress={() => setOutput(option.value)}
+                style={[styles.mode, isSelected && styles.modeSelected]}>
+                <AppText variant="bodyBold" tone={isSelected ? 'accent' : 'primary'}>
+                  {option.label}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={!selected}
+          onPress={() => selected && onDownload(selected, output)}
+          style={styles.downloadButton}>
+          <AppText variant="bodyBold" tone="onAccent" style={styles.downloadLabel}>
+            ダウンロード
+          </AppText>
+        </Pressable>
+      </View>
+    </Modal>
+  );
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+const styles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    gap: 14,
+    maxHeight: '75%',
+  },
+  grabber: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#44474F', alignSelf: 'center' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  list: { flexGrow: 0 },
+  listContent: { gap: 10 },
+  item: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: radius.lg,
+    backgroundColor: '#202329',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  itemSelected: { backgroundColor: colors.surfaceRaised, borderColor: colors.accent },
+  thumb: { width: 88, height: 50, borderRadius: radius.sm },
+  itemText: { flex: 1, gap: 3 },
+  modes: { flexDirection: 'row', gap: 8 },
+  mode: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#3A3D44',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  downloadButton: {
+    height: 52,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  downloadLabel: { fontSize: 16 },
+});
