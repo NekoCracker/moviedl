@@ -20,17 +20,61 @@ final class VlcEngine: NSObject, VLCMediaPlayerDelegate {
   private var lastTimeEvent: TimeInterval = 0
   private var remoteCommandsInstalled = false
   private var remoteTargets: [Any] = []
+  private var artwork: MPMediaItemArtwork?
+  // 電話などで中断される前に再生していたか（終わったら再開する）
+  private var wasPlayingBeforeInterruption = false
 
   override init() {
     super.init()
     player.delegate = self
+    let center = NotificationCenter.default
+    center.addObserver(self, selector: #selector(handleInterruption(_:)), name: AVAudioSession.interruptionNotification, object: nil)
+    center.addObserver(self, selector: #selector(handleRouteChange(_:)), name: AVAudioSession.routeChangeNotification, object: nil)
+  }
+
+  // MARK: - 中断・イヤホン
+
+  @objc private func handleInterruption(_ notification: Notification) {
+    guard player.media != nil,
+      let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+      let type = AVAudioSession.InterruptionType(rawValue: raw)
+    else { return }
+    DispatchQueue.main.async {
+      switch type {
+      case .began:
+        self.wasPlayingBeforeInterruption = self.player.isPlaying
+        if self.player.isPlaying { self.pause() }
+      case .ended:
+        let optionsRaw = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+        if self.wasPlayingBeforeInterruption && AVAudioSession.InterruptionOptions(rawValue: optionsRaw).contains(.shouldResume) {
+          self.play()
+        }
+        self.wasPlayingBeforeInterruption = false
+      @unknown default:
+        break
+      }
+    }
+  }
+
+  // イヤホンが抜けたら一時停止する（iOS 標準の動き）
+  @objc private func handleRouteChange(_ notification: Notification) {
+    guard let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+      AVAudioSession.RouteChangeReason(rawValue: raw) == .oldDeviceUnavailable
+    else { return }
+    DispatchQueue.main.async {
+      if self.player.isPlaying { self.pause() }
+    }
   }
 
   // MARK: - 操作
 
-  func load(uri: String, title: String, startSec: Double, autoplay: Bool) {
+  func load(uri: String, title: String, artworkUri: String?, startSec: Double, autoplay: Bool) {
     guard let url = URL(string: uri) else { return }
     self.title = title
+    artwork = nil
+    if let artworkUri, let artworkURL = URL(string: artworkUri), let image = UIImage(contentsOfFile: artworkURL.path) {
+      artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    }
     player.stop()
     player.media = VLCMedia(url: url)
     pendingSeekMs = startSec > 0 ? Int32(startSec * 1000) : nil
@@ -134,12 +178,14 @@ final class VlcEngine: NSObject, VLCMediaPlayerDelegate {
 
   private func updateNowPlaying() {
     guard player.media != nil else { return }
-    MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+    var info: [String: Any] = [
       MPMediaItemPropertyTitle: title,
       MPMediaItemPropertyPlaybackDuration: duration,
       MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
       MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? Double(rate) : 0,
     ]
+    if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
   }
 
   private func installRemoteCommands() {

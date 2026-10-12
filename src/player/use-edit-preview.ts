@@ -57,7 +57,7 @@ export function useEditPreview(item: MediaItem | null, pauseMain: () => void) {
       ),
       vlcPlayer.addListener('onVlcEnd', () => setVlc((v) => ({ ...v, playing: false }))),
     ];
-    vlcPlayer.load(mediaFile(item.filePath).uri, item.title, 0, true);
+    vlcPlayer.load(mediaFile(item.filePath).uri, item.title, null, 0, true);
     return () => {
       subs.forEach((s) => s.remove());
       vlcPlayer.stop();

@@ -11,7 +11,8 @@ type Events = {
 };
 
 declare class VlcPlayerNative extends NativeModule<Events> {
-  load(uri: string, title: string, startSec: number, autoplay: boolean): void;
+  // artworkUri: ロック画面に出す画像（file://）。無ければ null
+  load(uri: string, title: string, artworkUri: string | null, startSec: number, autoplay: boolean): void;
   play(): void;
   pause(): void;
   stop(): void;

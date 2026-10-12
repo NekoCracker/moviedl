@@ -122,25 +122,8 @@ public final class MediaToolsModule: Module {
 
     // 変換を始める前に、発熱・電池残量を確かめる（feature-spec.md §2-12）
     Function("deviceCondition") { () -> [String: Any] in
-      let info = ProcessInfo.processInfo
-      let thermal: String
-      switch info.thermalState {
-      case .nominal: thermal = "nominal"
-      case .fair: thermal = "fair"
-      case .serious: thermal = "serious"
-      case .critical: thermal = "critical"
-      @unknown default: thermal = "nominal"
-      }
-      let device = UIDevice.current
-      device.isBatteryMonitoringEnabled = true
-      return [
-        "thermal": thermal,
-        // 取得できないときは -1
-        "batteryLevel": Double(device.batteryLevel),
-        "charging": device.batteryState == .charging || device.batteryState == .full,
-        "lowPowerMode": info.isLowPowerModeEnabled,
-      ]
-    }.runOnQueue(.main)
+      Thread.isMainThread ? MainActor.assumeIsolated { Self.deviceCondition() } : DispatchQueue.main.sync { MainActor.assumeIsolated { Self.deviceCondition() } }
+    }
 
     // iOS 26 以降で、アプリを閉じても変換を続けられるか
     Function("supportsContinuedProcessing") { () -> Bool in
@@ -205,6 +188,27 @@ public final class MediaToolsModule: Module {
     lock.lock()
     jobs[id] = nil
     lock.unlock()
+  }
+
+  @MainActor static func deviceCondition() -> [String: Any] {
+    let info = ProcessInfo.processInfo
+    let thermal: String
+    switch info.thermalState {
+    case .nominal: thermal = "nominal"
+    case .fair: thermal = "fair"
+    case .serious: thermal = "serious"
+    case .critical: thermal = "critical"
+    @unknown default: thermal = "nominal"
+    }
+    let device = UIDevice.current
+    device.isBatteryMonitoringEnabled = true
+    return [
+      "thermal": thermal,
+      // 取得できないときは -1
+      "batteryLevel": Double(device.batteryLevel),
+      "charging": device.batteryState == .charging || device.batteryState == .full,
+      "lowPowerMode": info.isLowPowerModeEnabled,
+    ]
   }
 
   static func path(from uri: String) -> String {

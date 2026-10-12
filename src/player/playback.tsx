@@ -9,7 +9,7 @@ import { AppState } from 'react-native';
 import { listMedia, saveMediaDuration, savePlaybackPosition, type MediaItem, type MediaType, type SortDir, type SortKey } from '@/db/library';
 import { loadSettings, saveSetting } from '@/db/settings';
 import { mediaFile } from '@/download/storage';
-import { NATIVE_CONTAINERS } from '@/library/media-actions';
+import { NATIVE_CONTAINERS, thumbnailUri } from '@/library/media-actions';
 import { seekTo, setBackgroundPlayback, setPlaybackRate } from '@/player/controls';
 import { indexAfterEnd, indexForNext, indexForPrevious, shuffledOrder, type LoopMode } from '@/player/queue';
 import { getVlcTime, setVlcTime, subscribeVlcTime, vlcBorrowed, vlcGeneration } from '@/player/vlc-time';
@@ -95,7 +95,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const playable = isNativePlayable(current);
   const engine: PlaybackEngine = !current ? 'none' : playable ? 'native' : VlcPlayer ? 'vlc' : 'none';
   const source = useMemo(
-    () => (current && playable ? { uri: mediaFile(current.filePath).uri, metadata: { title: current.title } } : null),
+    () =>
+      current && playable
+        ? {
+            uri: mediaFile(current.filePath).uri,
+            // ロック画面・コントロールセンターに出すタイトルとサムネイル
+            metadata: { title: current.title, artwork: thumbnailUri(current.thumbnailPath) ?? undefined },
+          }
+        : null,
     [current, playable],
   );
 
@@ -158,7 +165,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       player.pause();
       setVlcTime(resumeAt);
       vlcLoadedGeneration.current = vlcGeneration();
-      VlcPlayer?.load(mediaFile(current.filePath).uri, current.title, resumeAt, true);
+      VlcPlayer?.load(mediaFile(current.filePath).uri, current.title, thumbnailUri(current.thumbnailPath), resumeAt, true);
       return;
     }
     VlcPlayer?.stop();
@@ -192,7 +199,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       if (current && vlcLoadedGeneration.current !== vlcGeneration()) {
         // 編集画面のプレビューに使われていたので、止めた位置から読み込み直す
         vlcLoadedGeneration.current = vlcGeneration();
-        VlcPlayer?.load(mediaFile(current.filePath).uri, current.title, getVlcTime(), true);
+        VlcPlayer?.load(mediaFile(current.filePath).uri, current.title, thumbnailUri(current.thumbnailPath), getVlcTime(), true);
       } else {
         VlcPlayer?.play();
       }

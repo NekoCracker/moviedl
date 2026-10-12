@@ -18,8 +18,8 @@ public final class VlcModule: Module {
       VlcEngine.shared.onEvent = nil
     }
 
-    Function("load") { (uri: String, title: String, startSec: Double, autoplay: Bool) in
-      VlcEngine.shared.load(uri: uri, title: title, startSec: startSec, autoplay: autoplay)
+    Function("load") { (uri: String, title: String, artworkUri: String?, startSec: Double, autoplay: Bool) in
+      VlcEngine.shared.load(uri: uri, title: title, artworkUri: artworkUri, startSec: startSec, autoplay: autoplay)
     }.runOnQueue(.main)
 
     Function("play") {
