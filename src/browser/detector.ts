@@ -15,7 +15,8 @@ export type DetectedMedia = {
 
 export type DetectorMessage =
   | { type: 'media-found'; media: DetectedMedia }
-  | { type: 'drm-detected'; pageUrl: string };
+  | { type: 'drm-detected'; pageUrl: string }
+  | { type: 'link-menu'; url: string };
 
 export const detectorScript = `
 (function () {
@@ -140,10 +141,49 @@ export const detectorScript = `
 true;
 `;
 
+// リンクの長押しで「新しいタブで開く」などのメニューを出すためのスクリプト。
+// iOS 標準のリンクプレビューは使わず（allowsLinkPreview=false）、長押しされたリンクのURLだけをアプリに送る。
+export const linkMenuScript = `
+(function () {
+  if (window.top !== window || window.__vsLinkMenu) { return; }
+  window.__vsLinkMenu = true;
+  var timer = null, startX = 0, startY = 0, suppressClick = false;
+  try {
+    var style = document.createElement('style');
+    style.textContent = 'a[href]{-webkit-touch-callout:none}';
+    (document.head || document.documentElement).appendChild(style);
+  } catch (e) {}
+  function cancel() { if (timer) { clearTimeout(timer); timer = null; } }
+  document.addEventListener('touchstart', function (e) {
+    cancel();
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a || !/^https?:/i.test(a.href)) { return; }
+    var t = e.touches[0]; startX = t.clientX; startY = t.clientY;
+    timer = setTimeout(function () {
+      timer = null;
+      suppressClick = true;
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'link-menu', url: a.href }));
+    }, 550);
+  }, { passive: true, capture: true });
+  document.addEventListener('touchmove', function (e) {
+    var t = e.touches[0];
+    if (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10) { cancel(); }
+  }, { passive: true, capture: true });
+  document.addEventListener('touchend', cancel, { capture: true });
+  document.addEventListener('touchcancel', cancel, { capture: true });
+  // 長押しのあとに指を離したときのクリックでページ移動しないようにする
+  document.addEventListener('click', function (e) {
+    if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); }
+  }, { capture: true });
+  document.addEventListener('touchstart', function () { suppressClick = false; }, { passive: true });
+})();
+true;
+`;
+
 export function parseDetectorMessage(data: string): DetectorMessage | null {
   try {
     const msg = JSON.parse(data) as { type?: string };
-    if (msg.type === 'media-found' || msg.type === 'drm-detected') {
+    if (msg.type === 'media-found' || msg.type === 'drm-detected' || msg.type === 'link-menu') {
       return msg as DetectorMessage;
     }
   } catch {

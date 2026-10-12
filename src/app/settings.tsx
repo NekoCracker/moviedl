@@ -7,7 +7,9 @@ import { ActionSheetIOS, Alert, Linking, Modal, Pressable, ScrollView, StyleShee
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
+import { chooseHistoryRange } from '@/components/browser/bookmarks-sheet';
 import { PasscodePad } from '@/components/passcode-pad';
+import { clearHistory } from '@/db/browser';
 import { loadSettings, saveSetting, type AppSettings } from '@/db/settings';
 import { appPasscode } from '@/security/passcode';
 import { colors, radius } from '@/theme';
@@ -75,15 +77,10 @@ export default function SettingsScreen() {
   };
 
   const clearBrowsingData = () => {
-    // TODO: キャッシュ・Cookie の削除と期間指定は WKWebsiteDataStore を使うネイティブモジュールで実装（feature-spec.md §2-7）
-    Alert.alert('閲覧履歴を削除', 'ダウンロードした動画とブックマークは消えません。', [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: '削除',
-        style: 'destructive',
-        onPress: () => db.runAsync('DELETE FROM history'),
-      },
-    ]);
+    // TODO: キャッシュ・Cookie の削除は WKWebsiteDataStore を使うネイティブモジュールで同じ期間指定に対応させる（feature-spec.md §2-7）
+    chooseHistoryRange('閲覧履歴を削除', (since) => {
+      clearHistory(db, since).then(() => Alert.alert('削除しました'));
+    });
   };
 
   if (!settings) return <View style={styles.screen} />;
