@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AdBanner } from '@/ads/banner';
 import { AppText } from '@/components/app-text';
 import { onJobsChanged } from '@/download/store';
+import { usePlayback } from '@/player/playback';
 import { FolderPasscodeModal, type FolderPasscodeMode } from '@/components/folder-passcode-modal';
 import { SegmentedControl } from '@/components/segmented-control';
 import {
@@ -40,10 +41,17 @@ const folderSortOptions: { value: FolderSort; label: string }[] = [
 ];
 
 type FolderCard = FolderSummary & { isAll?: boolean };
+// 2列の一覧で奇数個のとき、最後の1つが横いっぱいに広がらないよう空きマスを足す
+type GridCell = FolderCard | { spacer: true };
+
+// タブバー（とミニプレイヤー）のすぐ上にバナーを置くための高さ
+const TAB_BAR_HEIGHT = 58;
+const MINI_PLAYER_HEIGHT = 60;
 
 export default function LibraryScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
+  const { current } = usePlayback();
   const [mediaType, setMediaType] = useState<MediaType>('video');
   const [folders, setFolders] = useState<FolderCard[]>([]);
   const [totals, setTotals] = useState({ count: 0, bytes: 0 });
@@ -236,9 +244,9 @@ export default function LibraryScreen() {
         </Pressable>
       </View>
 
-      <FlatList
-        data={folders}
-        keyExtractor={(item) => String(item.id)}
+      <FlatList<GridCell>
+        data={folders.length % 2 === 1 ? [...folders, { spacer: true as const }] : folders}
+        keyExtractor={(item) => ('spacer' in item ? 'spacer' : String(item.id))}
         numColumns={2}
         columnWrapperStyle={styles.row}
         contentContainerStyle={styles.grid}
@@ -247,12 +255,23 @@ export default function LibraryScreen() {
             <AppText variant="small" tone="muted" style={styles.hint}>
               フォルダを長押しすると、名前の変更・パスコード・並べ替え・削除ができます。
             </AppText>
-            {/* タブバーやミニプレイヤーと重ならないよう、一覧の最後に置く */}
-            <AdBanner />
           </>
         }
-        renderItem={({ item }) => <FolderTile folder={item} onPress={() => openFolder(item)} onLongPress={() => folderMenu(item)} />}
+        renderItem={({ item }) =>
+          'spacer' in item ? (
+            <View style={styles.tile} />
+          ) : (
+            <FolderTile folder={item} onPress={() => openFolder(item)} onLongPress={() => folderMenu(item)} />
+          )
+        }
       />
+
+      {/* 一覧をスクロールしても動かないよう、タブバーの上に固定する */}
+      <View
+        pointerEvents="box-none"
+        style={[styles.bannerDock, { bottom: insets.bottom + TAB_BAR_HEIGHT + (current ? MINI_PLAYER_HEIGHT : 0) }]}>
+        <AdBanner />
+      </View>
 
       <FolderPasscodeModal
         folder={passcodeTarget?.folder ?? null}
@@ -314,7 +333,8 @@ const styles = StyleSheet.create({
   sortButton: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 36, paddingLeft: 8 },
   hint: { textAlign: 'center', paddingTop: 8 },
   pressed: { opacity: 0.7 },
-  grid: { paddingHorizontal: 20, paddingBottom: 120, gap: 14 },
+  grid: { paddingHorizontal: 20, paddingBottom: 200, gap: 14 },
+  bannerDock: { position: 'absolute', left: 0, right: 0 },
   row: { gap: 14 },
   tile: { flex: 1, gap: 8 },
   cover: {
