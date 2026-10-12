@@ -46,6 +46,8 @@ declare class MediaToolsNative extends NativeModule<Events> {
   concat(jobId: string, inputs: string[], output: string): Promise<'done' | 'cancelled'>;
   cancel(jobId: string): void;
   supportsContinuedProcessing(): boolean;
+  // 古いビルドには無い
+  convertIsSafe?: () => boolean;
   deviceCondition(): DeviceCondition;
   excludeFromBackup(uri: string): void;
   copySecurityScoped(uri: string, output: string): Promise<void>;

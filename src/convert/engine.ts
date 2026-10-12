@@ -71,6 +71,8 @@ async function setStatus(db: SQLiteDatabase, id: number, status: ConversionStatu
 // 起動時・前面に戻ったとき・変換を追加したときに呼ぶ。同時に動くのは1つだけ
 export async function runConversions(db: SQLiteDatabase) {
   if (running || !MediaTools) return;
+  // 2026-10-12 までの開発ビルドは、iOS 26 で変換を始めると落ちる。直したビルドが入るまで変換は待機させる
+  if (typeof MediaTools.convertIsSafe !== 'function') return;
   running = true;
   try {
     for (;;) {

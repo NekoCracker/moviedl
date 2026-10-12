@@ -15,10 +15,6 @@ public final class MediaToolsModule: Module {
 
     Events("onConvertProgress")
 
-    OnCreate {
-      ConvertBackgroundTasks.shared.registerIfNeeded()
-    }
-
     AsyncFunction("probe") { (uri: String, promise: Promise) in
       let path = Self.path(from: uri)
       self.queue.async {
@@ -123,6 +119,11 @@ public final class MediaToolsModule: Module {
     // 変換を始める前に、発熱・電池残量を確かめる（feature-spec.md §2-12）
     Function("deviceCondition") { () -> [String: Any] in
       Thread.isMainThread ? MainActor.assumeIsolated { Self.deviceCondition() } : DispatchQueue.main.sync { MainActor.assumeIsolated { Self.deviceCondition() } }
+    }
+
+    // 変換中のバックグラウンド処理の登録失敗で落ちないよう直したビルドか（JS 側で古いビルドを見分ける）
+    Function("convertIsSafe") { () -> Bool in
+      true
     }
 
     // iOS 26 以降で、アプリを閉じても変換を続けられるか

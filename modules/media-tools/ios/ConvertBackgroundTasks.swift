@@ -10,7 +10,8 @@ final class ConvertBackgroundTasks {
 
   private let identifierPrefix = (Bundle.main.bundleIdentifier ?? "com.nekocracker.moviedl") + ".convert"
   private let lock = NSLock()
-  private var registered = false
+  // 登録済みの識別子。同じ識別子を2回 register すると iOS がアプリを強制終了させる
+  private var registeredIdentifiers: Set<String> = []
   private var legacyTasks: [String: UIBackgroundTaskIdentifier] = [:]
   private var expireHandlers: [String: () -> Void] = [:]
   // iOS 26 の BGContinuedProcessingTask（型を iOS 26 に依存させないため AnyObject で持つ）
@@ -22,22 +23,29 @@ final class ConvertBackgroundTasks {
     return false
   }
 
-  func registerIfNeeded() {
+  // Info.plist には「.convert.*」を許可しておき、実際の識別子（.convert.<jobId>）ごとに submit の直前で登録する。
+  // 「.*」のまま register しても submit した識別子とは一致せず、未登録扱いで強制終了になる
+  @available(iOS 26.0, *)
+  private func register(identifier: String) -> Bool {
     #if compiler(>=6.2)
-    if #available(iOS 26.0, *) {
-      lock.lock()
-      defer { lock.unlock() }
-      if registered { return }
-      registered = true
-      // 末尾が .* の識別子は、続く名前ごとに同じ処理で受け取れる
-      _ = BGTaskScheduler.shared.register(forTaskWithIdentifier: "\(identifierPrefix).*", using: nil) { [weak self] task in
-        guard let self, let task = task as? BGContinuedProcessingTask else {
-          task.setTaskCompleted(success: false)
-          return
-        }
-        self.attach(task)
+    lock.lock()
+    defer { lock.unlock() }
+    if registeredIdentifiers.contains(identifier) { return true }
+    let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { [weak self] task in
+      guard let self, let task = task as? BGContinuedProcessingTask else {
+        task.setTaskCompleted(success: false)
+        return
       }
+      self.attach(task)
     }
+    if ok {
+      registeredIdentifiers.insert(identifier)
+    } else {
+      NSLog("[MediaTools] BGTaskScheduler.register failed for %@", identifier)
+    }
+    return ok
+    #else
+    return false
     #endif
   }
 
@@ -47,8 +55,7 @@ final class ConvertBackgroundTasks {
     lock.unlock()
 
     #if compiler(>=6.2)
-    if #available(iOS 26.0, *) {
-      registerIfNeeded()
+    if #available(iOS 26.0, *), register(identifier: "\(identifierPrefix).\(Self.sanitize(jobId))") {
       let request = BGContinuedProcessingTaskRequest(
         identifier: "\(identifierPrefix).\(Self.sanitize(jobId))",
         title: title,
