@@ -11,6 +11,8 @@ export type AppSettings = {
   folderSort: 'manual' | 'name' | 'created';
   // mp3 で保存・書き出しするときの音質（kbps）
   mp3Bitrate: 128 | 192 | 320;
+  // MP4 に変換するときの画質（ビットレート）
+  convertQuality: 'high' | 'standard' | 'small';
 };
 
 const defaults: AppSettings = {
@@ -22,6 +24,7 @@ const defaults: AppSettings = {
   lastPlaybackRate: 1,
   folderSort: 'manual',
   mp3Bitrate: 192,
+  convertQuality: 'standard',
 };
 
 export async function loadSettings(db: SQLiteDatabase): Promise<AppSettings> {

@@ -13,6 +13,7 @@ import { createThumbnail } from '@/library/media-actions';
 import { parsePlaylist, pickVariant, type HlsMediaPlaylist } from './hls';
 import { mediaFile, removeTempDirectory, tempDirectory } from './storage';
 import { notifyJobsChanged, setLiveProgress } from './store';
+import { notifyFinished } from '@/notifications';
 
 type JobRow = {
   id: number;
@@ -106,6 +107,10 @@ async function processJob(db: SQLiteDatabase, job: JobRow) {
     const videoId = await registerMedia(db, job, result);
     await db.runAsync("UPDATE downloads SET status = 'done', progress = 1, video_id = ? WHERE id = ?", videoId, job.id);
     removeTempDirectory(job.id);
+    // 音声のみ・MPEG-TS は続けて変換するので、通知は変換が終わったときに出す
+    if (job.output === 'video' && result.container !== 'ts') {
+      notifyFinished('ダウンロードが完了しました', job.title ?? '動画を保存しました');
+    }
   } catch (e) {
     // task.cancel()/pause() は downloadAsync を通常のエラーで終わらせることがあるので、停止要求を優先して見る
     if (stopRequest !== null || e instanceof PausedError) {

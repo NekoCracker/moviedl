@@ -76,6 +76,21 @@ export default function SettingsScreen() {
     );
   };
 
+  const chooseQuality = () => {
+    const options = ['high', 'standard', 'small'] as const;
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: 'MP4変換の画質',
+        message: 'WebM などをMP4に変換するときの画質です。高画質ほどファイルが大きくなります。',
+        options: [...options.map((q) => qualityLabels[q]), 'キャンセル'],
+        cancelButtonIndex: options.length,
+      },
+      (i) => {
+        if (i < options.length) update('convertQuality', options[i]);
+      },
+    );
+  };
+
   const chooseMp3Bitrate = () => {
     const options = [128, 192, 320] as const;
     ActionSheetIOS.showActionSheetWithOptions(
@@ -146,6 +161,7 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="保存">
+          <Row label="MP4変換の画質" value={qualityLabels[settings.convertQuality]} onPress={chooseQuality} />
           <Row label="mp3の音質" value={`${settings.mp3Bitrate}kbps`} onPress={chooseMp3Bitrate} />
         </Section>
 
@@ -188,6 +204,8 @@ export default function SettingsScreen() {
     </View>
   );
 }
+
+const qualityLabels: Record<AppSettings['convertQuality'], string> = { high: '高画質', standard: '標準', small: '省容量' };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (

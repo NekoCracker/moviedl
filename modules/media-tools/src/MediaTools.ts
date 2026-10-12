@@ -28,6 +28,13 @@ export type ConvertOptions = {
   title?: string;
 };
 
+export type DeviceCondition = {
+  thermal: 'nominal' | 'fair' | 'serious' | 'critical';
+  batteryLevel: number;
+  charging: boolean;
+  lowPowerMode: boolean;
+};
+
 type Events = {
   onConvertProgress: (event: { jobId: string; fraction: number }) => void;
 };
@@ -39,6 +46,7 @@ declare class MediaToolsNative extends NativeModule<Events> {
   concat(jobId: string, inputs: string[], output: string): Promise<'done' | 'cancelled'>;
   cancel(jobId: string): void;
   supportsContinuedProcessing(): boolean;
+  deviceCondition(): DeviceCondition;
   excludeFromBackup(uri: string): void;
   clearWebsiteData(types: ('cache' | 'cookies')[], sinceMs: number | null): Promise<void>;
   websiteDataSize(): Promise<number>;

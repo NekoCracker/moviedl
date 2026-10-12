@@ -31,6 +31,7 @@ import {
   type BrowserTab,
 } from '@/db/browser';
 import { showDownloadAd } from '@/ads/download-ad';
+import { ensureNotificationPermission } from '@/notifications';
 import { enqueueDownload, type DownloadOutput } from '@/db/downloads';
 import { runQueue } from '@/download/engine';
 import { colors, fonts, radius } from '@/theme';
@@ -259,6 +260,8 @@ export default function BrowserScreen() {
     }
     // 無料版はここで動画広告を出す（出せなければ5秒で諦めてそのまま保存する）
     await showDownloadAd();
+    // 完了通知の許可は、初めてダウンロードしたときに聞く
+    await ensureNotificationPermission();
     await enqueueDownload(db, {
       sourceUrl: item.url,
       pageUrl: item.pageUrl,

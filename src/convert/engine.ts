@@ -4,13 +4,15 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Directory, File, Paths } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { AppState } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import { MediaTools, type ConvertMode, type ConvertOptions, type ProbeResult } from 'media-tools';
 
 import { getMediaByIds, nextManualOrder, type MediaItem } from '@/db/library';
+import { loadSettings } from '@/db/settings';
 import { mediaFile } from '@/download/storage';
 import { notifyJobsChanged, setLiveProgress } from '@/download/store';
 import { createThumbnail } from '@/library/media-actions';
+import { notifyFinished } from '@/notifications';
 
 export type ConversionKind = 'mp4' | 'm4a' | 'mp3' | 'trim';
 export type ConversionStatus = 'pending' | 'running' | 'paused' | 'done' | 'error';
@@ -120,6 +122,42 @@ export function watchConversions(db: SQLiteDatabase) {
   runConversions(db);
 }
 
+const finishedMessages: Record<ConversionKind, string> = {
+  mp4: 'MP4への変換が完了しました',
+  m4a: '音声を保存しました',
+  mp3: '音声を保存しました',
+  trim: 'トリミングが完了しました',
+};
+
+// 発熱・電池残量が少ないときは、変換を始める前に確かめる。続けてよければ true
+export function checkDeviceBeforeConvert(): Promise<boolean> {
+  const condition = MediaTools?.deviceCondition();
+  if (!condition) return Promise.resolve(true);
+  const hot = condition.thermal === 'serious' || condition.thermal === 'critical';
+  const lowBattery = !condition.charging && condition.batteryLevel >= 0 && condition.batteryLevel < 0.2;
+  if (!hot && !lowBattery) return Promise.resolve(true);
+  const message = hot
+    ? '端末が熱くなっています。変換は端末に負荷がかかるため、冷めてから行うことをおすすめします。'
+    : `電池残量が${Math.round(condition.batteryLevel * 100)}%です。変換は電池を多く使うため、充電しながら行うことをおすすめします。`;
+  return new Promise((resolve) => {
+    Alert.alert(hot ? '端末が熱くなっています' : '電池残量が少なくなっています', message, [
+      { text: 'やめる', style: 'cancel', onPress: () => resolve(false) },
+      { text: '続ける', onPress: () => resolve(true) },
+    ]);
+  });
+}
+
+const qualityFactor = { high: 1.5, standard: 1, small: 0.6 } as const;
+
+// mt_core.c の auto_video_bitrate と同じ目安
+function baseVideoBitrate(height: number): number {
+  if (height <= 480) return 1_500_000;
+  if (height <= 720) return 3_500_000;
+  if (height <= 1080) return 6_000_000;
+  if (height <= 1440) return 10_000_000;
+  return 16_000_000;
+}
+
 async function runOne(db: SQLiteDatabase, job: ConversionRow): Promise<'finished' | 'interrupted'> {
   const [item] = await getMediaByIds(db, [job.video_id]);
   if (!item) {
@@ -145,6 +183,7 @@ async function runOne(db: SQLiteDatabase, job: ConversionRow): Promise<'finished
     await finish(db, job, item, params, output);
     await db.runAsync("UPDATE conversions SET status = 'done', progress = 1, error = NULL WHERE id = ?", job.id);
     removeWorkDirectory(job.id);
+    notifyFinished(finishedMessages[job.kind], item.title);
   } catch (e) {
     if (e instanceof StoppedError || stopRequest) {
       if (stopRequest === 'cancel') {
@@ -196,6 +235,11 @@ async function convertWithChunks(
   // 映像をコピーできるなら、音声だけ変換しても速いので1回で終える。区間に分けるのは映像の再エンコードと MP3 だけ
   const single = !isTrim && (length <= 0 || (mode === 'mp4' ? !needsVideoEncode : mode === 'm4a' || !needsAudioEncode));
 
+  // 画質の設定。標準は mt_core の自動設定と同じ値で、高画質は1.5倍、省容量は0.6倍
+  const { convertQuality } = await loadSettings(db);
+  const videoBitrate =
+    mode === 'mp4' && probe.hasVideo ? Math.round(baseVideoBitrate(probe.height) * qualityFactor[convertQuality]) : 0;
+
   const run = async (options: ConvertOptions, onFraction: (f: number) => void) => {
     const sub = MediaTools!.addListener('onConvertProgress', (e) => {
       if (e.jobId === String(job.id)) onFraction(e.fraction);
@@ -241,6 +285,7 @@ async function convertWithChunks(
         // 最後の区間は終わりまで（長さの誤差で末尾が欠けないように）
         endSec: i === total - 1 && !isTrim ? -1 : end,
         forceEncode: true,
+        videoBitrate,
         audioBitrate: (params.bitrate ?? 192) * 1000,
       },
       (f) => {

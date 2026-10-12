@@ -33,7 +33,7 @@ import {
   saveToCameraRoll,
   thumbnailUri,
 } from '@/library/media-actions';
-import { runConversions } from '@/convert/engine';
+import { checkDeviceBeforeConvert, runConversions } from '@/convert/engine';
 import { usePlayback } from '@/player/playback';
 import { requirePremium } from '@/premium/store';
 import { folderUnlock } from '@/security/folder-unlock';
@@ -189,12 +189,14 @@ export default function FolderScreen() {
       Alert.alert('写真に保存', lines.join('\n'));
     });
 
-  const queue = (item: MediaItem, kind: 'mp4' | 'm4a' | 'mp3') =>
-    runBusy('', async () => {
+  const queue = async (item: MediaItem, kind: 'mp4' | 'm4a' | 'mp3') => {
+    if (!(await checkDeviceBeforeConvert())) return;
+    await runBusy('', async () => {
       const added = await queueConversion(db, item.id, kind, kind === 'mp3' ? { bitrate: (await loadSettings(db)).mp3Bitrate } : {});
       runConversions(db);
       Alert.alert(added ? '変換を開始しました' : 'すでに変換待ちです', '進み具合は「ダウンロード」タブで確認できます。');
     });
+  };
 
   const itemMenu = (item: MediaItem) => {
     const index = items.findIndex((i) => i.id === item.id);

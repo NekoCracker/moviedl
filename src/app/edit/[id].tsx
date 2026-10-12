@@ -11,7 +11,7 @@ import { RangeSlider } from '@/components/range-slider';
 import { Scrubber } from '@/components/scrubber';
 import { getMediaByIds, type MediaItem } from '@/db/library';
 import { createThumbnail, queueConversion } from '@/library/media-actions';
-import { runConversions } from '@/convert/engine';
+import { checkDeviceBeforeConvert, runConversions } from '@/convert/engine';
 import { usePlayback } from '@/player/playback';
 import { useEditPreview } from '@/player/use-edit-preview';
 import { colors, radius } from '@/theme';
@@ -82,6 +82,7 @@ export default function EditScreen() {
       },
       async (i) => {
         if (i > 1) return;
+        if (!(await checkDeviceBeforeConvert())) return;
         // 書き出しはネイティブの変換キューで行う（区間ごとに保存し、中断しても再開できる。feature-spec.md §2-12）
         await queueConversion(db, item.id, 'trim', { start, end, replace: i === 1 });
         runConversions(db);
