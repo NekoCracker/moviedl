@@ -1,0 +1,59 @@
+# EAS のビルド回数を使わずに、ネイティブコード（Swift・VLCKit・MediaToolsCore）がコンパイルできるか確かめる。
+# シミュレーター向けに署名なしでビルドするだけで、成果物は作らない。
+name: ios-compile-check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - modules/**
+      - app.json
+      - package.json
+      - package-lock.json
+      - .github/workflows/ios-compile-check.yml
+
+concurrency:
+  group: ios-compile-check
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          [ -n "$XCODE" ] && sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prebuild
+        run: npx expo prebuild --platform ios --no-install 2>&1 | tee prebuild.log
+      - name: Pod install
+        run: cd ios && pod install 2>&1 | tee ../pod.log
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          WS=$(ls -d ios/*.xcworkspace | head -n 1)
+          SCHEME=$(xcodebuild -list -json -workspace "$WS" | python3 -c 'import json,sys; d=json.load(sys.stdin)["workspace"]["schemes"]; print(next(s for s in d if not s.startswith("Pods") and s not in ("EXConstants","EXUpdates")))')
+          echo "workspace=$WS scheme=$SCHEME"
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee build.log | grep -E '^(\*\*|.*error:|.*warning: .*MediaTools)' || true
+          grep -q '\*\* BUILD SUCCEEDED \*\*' build.log
+      - name: Annotate errors
+        if: failure()
+        run: |
+          for LOG in build.log pod.log prebuild.log; do
+            [ -f "$LOG" ] || continue
+            grep -E 'error:|fatal error|Undefined symbol|ld: ' "$LOG" | sort -u | head -n 60 > "$LOG.errors" || true
+            [ -s "$LOG.errors" ] && bash .github/scripts/annotate-log.sh "$LOG.errors" 60
+            bash .github/scripts/annotate-log.sh "$LOG" 60
+            # 注釈は1ステップ10件までなので、最後まで進んだログだけ残す
+            break
+          done
