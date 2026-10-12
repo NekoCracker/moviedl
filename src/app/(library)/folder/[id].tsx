@@ -57,6 +57,20 @@ export default function FolderScreen() {
 
   const totalBytes = items.reduce((sum, item) => sum + (item.sizeBytes ?? 0), 0);
 
+  const openPlayer = (options: { startId?: number; shuffle?: boolean }) => {
+    router.push({
+      pathname: '/player',
+      params: {
+        folderId: String(folderId),
+        type: mediaType,
+        sortKey: sort.key,
+        sortDir: sort.dir,
+        ...(options.startId != null ? { startId: String(options.startId) } : {}),
+        ...(options.shuffle ? { shuffle: '1' } : {}),
+      },
+    });
+  };
+
   const chooseSort = () => {
     ActionSheetIOS.showActionSheetWithOptions(
       {
@@ -88,13 +102,21 @@ export default function FolderScreen() {
       </View>
 
       <View style={styles.actions}>
-        <Pressable accessibilityRole="button" style={[styles.actionButton, styles.primaryAction]} disabled={items.length === 0}>
+        <Pressable
+          accessibilityRole="button"
+          style={[styles.actionButton, styles.primaryAction]}
+          disabled={items.length === 0}
+          onPress={() => openPlayer({ startId: items[0]?.id })}>
           <SymbolView name="play.fill" tintColor={colors.onAccent} size={16} />
           <AppText variant="bodyBold" tone="onAccent">
             再生
           </AppText>
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.actionButton} disabled={items.length === 0}>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.actionButton}
+          disabled={items.length === 0}
+          onPress={() => openPlayer({ shuffle: true })}>
           <SymbolView name="shuffle" tintColor={colors.text} size={16} />
           <AppText variant="bodyBold">シャッフル</AppText>
         </Pressable>
@@ -127,19 +149,19 @@ export default function FolderScreen() {
             {search ? '一致するものがありません' : 'まだ何もありません。ブラウザから保存するか、ファイルから取り込んでください。'}
           </AppText>
         }
-        renderItem={({ item }) => <MediaRow item={item} />}
+        renderItem={({ item }) => <MediaRow item={item} onPress={() => openPlayer({ startId: item.id })} />}
       />
     </View>
   );
 }
 
-function MediaRow({ item }: { item: MediaItem }) {
+function MediaRow({ item, onPress }: { item: MediaItem; onPress: () => void }) {
   const progress = item.durationSec ? Math.min(1, item.lastPositionSec / item.durationSec) : 0;
   const meta = [item.container?.toUpperCase(), item.sizeBytes ? formatBytes(item.sizeBytes) : null]
     .filter(Boolean)
     .join('・');
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={item.title} style={styles.row}>
+    <Pressable accessibilityRole="button" accessibilityLabel={item.title} onPress={onPress} style={styles.row}>
       <View style={[styles.thumb, { backgroundColor: placeholderTint(item.id) }]}>
         <View style={styles.duration}>
           <AppText variant="small">{formatDuration(item.durationSec)}</AppText>

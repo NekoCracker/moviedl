@@ -193,3 +193,12 @@ export async function getLibraryTotals(db: SQLiteDatabase, mediaType: MediaType)
   );
   return { count: row?.c ?? 0, bytes: row?.b ?? 0 };
 }
+
+export async function savePlaybackPosition(db: SQLiteDatabase, id: number, positionSec: number) {
+  await db.runAsync(
+    'UPDATE videos SET last_position_sec = ?, last_played_at = ? WHERE id = ?',
+    positionSec,
+    Date.now(),
+    id,
+  );
+}

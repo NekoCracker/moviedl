@@ -45,7 +45,14 @@
           "imageWidth": 76
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": true,
+          "supportsPictureInPicture": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
