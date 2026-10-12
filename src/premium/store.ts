@@ -3,9 +3,11 @@ import { useSyncExternalStore } from 'react';
 
 export type PremiumFeature = 'ads' | 'folderPasscode' | 'trim' | 'thumbnail';
 
-type State = { isPremium: boolean; paywall: PremiumFeature | 'settings' | null };
+type State = { isPremium: boolean; paywall: PremiumFeature | 'settings' | null; devOverride: boolean | null };
 
-let state: State = { isPremium: false, paywall: null };
+let state: State = { isPremium: false, paywall: null, devOverride: null };
+// 実際の購入状態。開発ビルドの切り替え（devOverride）が入っていればそちらを優先する
+let purchased = false;
 const listeners = new Set<() => void>();
 
 function set(next: Partial<State>) {
@@ -31,7 +33,15 @@ export function isPremiumNow(): boolean {
 }
 
 export function setPremium(isPremium: boolean) {
-  if (state.isPremium !== isPremium) set({ isPremium });
+  purchased = isPremium;
+  const effective = state.devOverride ?? purchased;
+  if (state.isPremium !== effective) set({ isPremium: effective });
+}
+
+// 開発ビルドでの動作確認用。null で実際の購入状態に戻す
+export function setDevPremiumOverride(value: boolean | null) {
+  if (!__DEV__) return;
+  set({ devOverride: value, isPremium: value ?? purchased });
 }
 
 export function openPaywall(reason: PremiumFeature | 'settings') {
