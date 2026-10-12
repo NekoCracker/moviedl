@@ -12,13 +12,13 @@ type Events = {
 
 declare class VlcPlayerNative extends NativeModule<Events> {
   // artworkUri: ロック画面に出す画像（file://）。無ければ null
-  load(uri: string, title: string, artworkUri: string | null, startSec: number, autoplay: boolean): void;
-  play(): void;
-  pause(): void;
-  stop(): void;
-  seek(seconds: number): void;
-  setRate(rate: number): void;
-  getStatus(): { currentTime: number; duration: number; isPlaying: boolean };
+  load(uri: string, title: string, artworkUri: string | null, startSec: number, autoplay: boolean): Promise<void>;
+  play(): Promise<void>;
+  pause(): Promise<void>;
+  stop(): Promise<void>;
+  seek(seconds: number): Promise<void>;
+  setRate(rate: number): Promise<void>;
+  getStatus(): Promise<{ currentTime: number; duration: number; isPlaying: boolean }>;
 }
 
 // iOS 標準で再生できない形式（WebM・MKV など）用の再生エンジン。開発ビルドより前の環境では null

@@ -2,6 +2,7 @@ import ExpoModulesCore
 import UIKit
 
 // VlcEngine を JS から操作するためのモジュールと、映像を表示する View
+// 操作は UIKit（VLC の描画先）に触れるのでメインスレッドで動かす。runOnQueue は AsyncFunction にしか付けられない
 public final class VlcModule: Module {
   public func definition() -> ModuleDefinition {
     Name("VlcPlayer")
@@ -18,31 +19,31 @@ public final class VlcModule: Module {
       VlcEngine.shared.onEvent = nil
     }
 
-    Function("load") { (uri: String, title: String, artworkUri: String?, startSec: Double, autoplay: Bool) in
+    AsyncFunction("load") { (uri: String, title: String, artworkUri: String?, startSec: Double, autoplay: Bool) in
       VlcEngine.shared.load(uri: uri, title: title, artworkUri: artworkUri, startSec: startSec, autoplay: autoplay)
     }.runOnQueue(.main)
 
-    Function("play") {
+    AsyncFunction("play") {
       VlcEngine.shared.play()
     }.runOnQueue(.main)
 
-    Function("pause") {
+    AsyncFunction("pause") {
       VlcEngine.shared.pause()
     }.runOnQueue(.main)
 
-    Function("stop") {
+    AsyncFunction("stop") {
       VlcEngine.shared.stop()
     }.runOnQueue(.main)
 
-    Function("seek") { (seconds: Double) in
+    AsyncFunction("seek") { (seconds: Double) in
       VlcEngine.shared.seek(to: seconds)
     }.runOnQueue(.main)
 
-    Function("setRate") { (rate: Double) in
+    AsyncFunction("setRate") { (rate: Double) in
       VlcEngine.shared.setRate(Float(rate))
     }.runOnQueue(.main)
 
-    Function("getStatus") { () -> [String: Any] in
+    AsyncFunction("getStatus") { () -> [String: Any] in
       ["currentTime": VlcEngine.shared.currentTime, "duration": VlcEngine.shared.duration, "isPlaying": VlcEngine.shared.isPlaying]
     }.runOnQueue(.main)
 
