@@ -1,5 +1,5 @@
 // WebView に注入する動画検出スクリプト。
-// ページ上で素直に見える動画URL（<video>/<source> の src、fetch/XHR で読み込まれる mp4・m3u8 等）だけを拾う。
+// ページ上で素直に見える動画URL（<video>/<source> の src、通信で読み込まれる mp4・m3u8 等）だけを拾う。
 // サイト固有の難読化の解読や、DRM・暗号化の回避は行わない（feature-spec.md §0）。
 
 export type DetectedKind = 'hls' | 'file';
@@ -25,7 +25,7 @@ export const detectorScript = `
   if (window.__vsDetector) { return; }
   window.__vsDetector = true;
   // Cloudflare の確認（Turnstile）の枠の中では何もしない。fetch などを書き換えていると確認が通らない
-  if (location.hostname === 'challenges.cloudflare.com') { return; }
+  if (location.hostname === 'challenges.cloudflare.com' || (window.top !== window && !location.hostname)) { return; }
 
   var seen = {};
   var FILE_EXT = /\\.(mp4|m4v|mov|webm|mkv|flv|avi|ts|m4a|mp3)(\\?|#|$)/i;
@@ -137,64 +137,58 @@ export const detectorScript = `
     }, true);
   });
 
-  var origFetch = window.fetch;
-  if (origFetch) {
-    window.fetch = function (input, init) {
-      var url = typeof input === 'string' ? input : (input && input.url);
-      report(url, null, null);
-      return origFetch.apply(this, arguments).then(function (res) {
-        try { report(res.url, res.headers.get('content-type'), null); } catch (e) {}
-        return res;
-      });
-    };
-  }
+  // 読み込まれた通信のURLは、ページの関数を書き換えずに Resource Timing から拾う（読み込み前の分もまとめて届く）
+  try {
+    new PerformanceObserver(function (list) {
+      list.getEntries().forEach(function (entry) { report(entry.name, null, null); });
+    }).observe({ type: 'resource', buffered: true });
+  } catch (e) {}
 
-  var origOpen = XMLHttpRequest.prototype.open;
-  var origEmeFn = navigator.requestMediaKeySystemAccess;
-
-  // Cloudflare の確認ページでは、確認用のスクリプトが動く前に書き換えを元に戻す。
-  // パーサーはスクリプトを実行する前に MutationObserver へ通知するので、ここで間に合う
-  function restoreNatives() {
-    if (origFetch) { window.fetch = origFetch; }
-    XMLHttpRequest.prototype.open = origOpen;
-    if (origEmeFn) { navigator.requestMediaKeySystemAccess = origEmeFn; }
-  }
-  function isChallengeScript(node) {
-    if (!node || node.tagName !== 'SCRIPT') { return false; }
-    var src = node.getAttribute('src') || '';
-    return src.indexOf('/cdn-cgi/challenge-platform/') !== -1 || (node.textContent || '').indexOf('_cf_chl_opt') !== -1;
-  }
-  var challengeWatch = new MutationObserver(function (records) {
-    for (var i = 0; i < records.length; i++) {
-      var added = records[i].addedNodes;
-      for (var j = 0; j < added.length; j++) {
-        if (isChallengeScript(added[j])) {
-          restoreNatives();
-          challengeWatch.disconnect();
-          return;
-        }
-      }
+  // Cloudflare の確認（Turnstile を含む）があるページでは、fetch などを書き換えると確認が通らないことがある。
+  // そのため書き換えはページの読み込みが終わってから、確認の気配が無いときだけ行う
+  function hasChallenge() {
+    if (window._cf_chl_opt || window.turnstile) { return true; }
+    var scripts = document.scripts;
+    for (var i = 0; i < scripts.length; i++) {
+      var src = scripts[i].src || '';
+      if (src.indexOf('/cdn-cgi/challenge-platform/') !== -1 || src.indexOf('challenges.cloudflare.com') !== -1) { return true; }
     }
-  });
-  challengeWatch.observe(document, { childList: true, subtree: true });
-  document.addEventListener('DOMContentLoaded', function () { challengeWatch.disconnect(); });
+    return !!document.querySelector('iframe[src*="challenges.cloudflare.com"], .cf-turnstile, #challenge-form');
+  }
 
-  XMLHttpRequest.prototype.open = function (method, url) {
-    this.__vsUrl = url;
-    this.addEventListener('load', function () {
-      try { report(this.responseURL || this.__vsUrl, this.getResponseHeader('content-type'), null); } catch (e) {}
-    });
-    report(url, null, null);
-    return origOpen.apply(this, arguments);
-  };
-
-  // DRM（EME）を使うページは保存対象外として通知する
-  if (navigator.requestMediaKeySystemAccess) {
-    var origEme = navigator.requestMediaKeySystemAccess.bind(navigator);
-    navigator.requestMediaKeySystemAccess = function () {
-      post({ type: 'drm-detected', pageUrl: location.href });
-      return origEme.apply(null, arguments);
+  // URLに拡張子が無い動画は、応答の Content-Type を見ないと分からないので、fetch/XHR の結果を見る
+  function hookNetwork() {
+    if (hasChallenge()) { return; }
+    var origFetch = window.fetch;
+    if (origFetch) {
+      window.fetch = function (input, init) {
+        return origFetch.apply(this, arguments).then(function (res) {
+          try { report(res.url, res.headers.get('content-type'), null); } catch (e) {}
+          return res;
+        });
+      };
+    }
+    var origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      this.__vsUrl = url;
+      this.addEventListener('load', function () {
+        try { report(this.responseURL || this.__vsUrl, this.getResponseHeader('content-type'), null); } catch (e) {}
+      });
+      return origOpen.apply(this, arguments);
     };
+    // DRM（EME）を使うページは保存対象外として通知する
+    if (navigator.requestMediaKeySystemAccess) {
+      var origEme = navigator.requestMediaKeySystemAccess.bind(navigator);
+      navigator.requestMediaKeySystemAccess = function () {
+        post({ type: 'drm-detected', pageUrl: location.href });
+        return origEme.apply(null, arguments);
+      };
+    }
+  }
+  if (document.readyState === 'complete') {
+    hookNetwork();
+  } else {
+    window.addEventListener('load', hookNetwork);
   }
 
   function start() {
@@ -202,11 +196,6 @@ export const detectorScript = `
     new MutationObserver(scanDocument).observe(document.documentElement, {
       childList: true, subtree: true, attributes: true, attributeFilter: ['src']
     });
-    setInterval(function () {
-      try {
-        performance.getEntriesByType('resource').forEach(function (entry) { report(entry.name, null, null); });
-      } catch (e) {}
-    }, 2000);
   }
 
   if (document.readyState === 'loading') {
