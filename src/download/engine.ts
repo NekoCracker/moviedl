@@ -196,10 +196,22 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
   ];
 
   // 途中まで落とした区間はスキップして再開する
-  let done = parts.filter((p) => new File(temp, p.name).exists).length;
+  let done = 0;
+  let bytes = 0;
+  for (const p of parts) {
+    const f = new File(temp, p.name);
+    if (f.exists) {
+      done++;
+      bytes += f.size;
+    }
+  }
   let next = 0;
+  // 全体の大きさは最初に分からないので、落とし終えた区間の平均から見積もる
   const report = () =>
-    setLiveProgress(job.id, { fraction: done / parts.length, detail: `${done} / ${parts.length} 区間` });
+    setLiveProgress(job.id, {
+      fraction: done / parts.length,
+      detail: done > 0 ? `${mb(bytes)} / 約 ${mb((bytes / done) * parts.length)}` : mb(0),
+    });
   report();
 
   const worker = async () => {
@@ -214,6 +226,7 @@ async function downloadHls(job: JobRow): Promise<DownloadResult> {
       await File.downloadFileAsync(part.url, partial, { headers: headersFor(job), idempotent: true });
       partial.move(target);
       done++;
+      bytes += target.size;
       report();
     }
   };

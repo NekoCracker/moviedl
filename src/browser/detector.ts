@@ -11,6 +11,8 @@ export type DetectedMedia = {
   pageUrl: string;
   pageTitle: string;
   poster: string | null;
+  // ページの <video> から分かったときだけ入る
+  durationSec?: number | null;
 };
 
 export type DetectorMessage =
@@ -73,11 +75,20 @@ export const detectorScript = `
   document.addEventListener('DOMContentLoaded', fillPosters);
   window.addEventListener('load', fillPosters);
 
-  function report(rawUrl, contentType, poster) {
+  function report(rawUrl, contentType, poster, duration) {
     if (!rawUrl || typeof rawUrl !== 'string') { return; }
     if (rawUrl.indexOf('blob:') === 0 || rawUrl.indexOf('data:') === 0) { return; }
     var url = absolute(rawUrl);
-    if (!url || seen[url]) { return; }
+    if (!url) { return; }
+    if (seen[url]) {
+      // あとから長さが分かったら知らせる
+      var known = reported[url];
+      if (known && !known.durationSec && duration > 0 && isFinite(duration)) {
+        known.durationSec = duration;
+        send(known);
+      }
+      return;
+    }
     var type = (contentType || '').toLowerCase();
     var kind = null;
     if (HLS_EXT.test(url) || type.indexOf('mpegurl') !== -1) {
@@ -94,7 +105,8 @@ export const detectorScript = `
       container: kind === 'hls' ? 'm3u8' : containerOf(url),
       pageUrl: location.href,
       pageTitle: document.title || location.hostname,
-      poster: p ? absolute(p) : null
+      poster: p ? absolute(p) : null,
+      durationSec: duration > 0 && isFinite(duration) ? duration : null
     };
     reported[url] = media;
     send(media);
@@ -103,10 +115,11 @@ export const detectorScript = `
   function scanMediaElement(el) {
     var poster = el.getAttribute && el.getAttribute('poster');
     if (poster) { fillPosters(); }
-    report(el.currentSrc || el.src, el.getAttribute && el.getAttribute('type'), poster);
+    var duration = el.duration;
+    report(el.currentSrc || el.src, el.getAttribute && el.getAttribute('type'), poster, duration);
     var sources = el.querySelectorAll ? el.querySelectorAll('source') : [];
     for (var i = 0; i < sources.length; i++) {
-      report(sources[i].src, sources[i].getAttribute('type'), poster);
+      report(sources[i].src, sources[i].getAttribute('type'), poster, duration);
     }
   }
 
@@ -115,7 +128,7 @@ export const detectorScript = `
     for (var i = 0; i < media.length; i++) { scanMediaElement(media[i]); }
   }
 
-  ['loadedmetadata', 'play', 'loadstart'].forEach(function (name) {
+  ['loadedmetadata', 'durationchange', 'play', 'loadstart'].forEach(function (name) {
     document.addEventListener(name, function (e) {
       var t = e.target;
       if (t && (t.tagName === 'VIDEO' || t.tagName === 'AUDIO')) { scanMediaElement(t); }

@@ -208,8 +208,10 @@ export default function BrowserScreen() {
     setDetected((prev) => {
       const existing = prev.find((m) => m.url === media.url);
       if (!existing) return [...prev, media];
-      // あとから届いたポスター画像だけ反映する
-      return !existing.poster && media.poster ? prev.map((m) => (m.url === media.url ? media : m)) : prev;
+      // あとから届いたポスター画像・長さだけ反映する
+      const merged = { ...existing, poster: existing.poster ?? media.poster, durationSec: existing.durationSec ?? media.durationSec };
+      const changed = merged.poster !== existing.poster || merged.durationSec !== existing.durationSec;
+      return changed ? prev.map((m) => (m.url === media.url ? merged : m)) : prev;
     });
   };
 

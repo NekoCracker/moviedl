@@ -290,7 +290,7 @@ async function convertWithChunks(
       },
       (f) => {
         const fraction = (i + f) / (total + 0.2);
-        setLiveProgress(liveId, { fraction, detail: `${Math.round(fraction * 100)}%（${i + 1}/${total}区間）` });
+        setLiveProgress(liveId, { fraction, detail: `${Math.round(fraction * 100)}%` });
       },
     );
     await db.runAsync('UPDATE conversions SET done_chunks = ?, progress = ? WHERE id = ?', i + 1, (i + 1) / (total + 0.2), job.id);

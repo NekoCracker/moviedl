@@ -11,6 +11,8 @@ import type { DetectedMedia } from '@/browser/detector';
 import type { DownloadOutput } from '@/db/downloads';
 import { listFolders } from '@/db/library';
 import { UNSORTED_FOLDER_ID } from '@/db/schema';
+import { remoteInfo, type RemoteInfo } from '@/download/remote-info';
+import { formatBytes, formatDuration } from '@/utils/format';
 import { colors, placeholderTint, radius } from '@/theme';
 
 const outputOptions: { value: DownloadOutput; label: string }[] = [
@@ -84,9 +86,7 @@ export function DetectedSheet({
                   <AppText variant="bodyBold" numberOfLines={1}>
                     {item.pageTitle}
                   </AppText>
-                  <AppText variant="small" tone="secondary" numberOfLines={1}>
-                    {item.kind === 'hls' ? 'HLS' : (item.container ?? '不明').toUpperCase()}・{hostOf(item.url)}
-                  </AppText>
+                  <DetectedDetail item={item} />
                 </View>
               </Pressable>
             );
@@ -142,6 +142,33 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+// 形式・長さ・サイズ・サイト名
+function DetectedDetail({ item }: { item: DetectedMedia }) {
+  const [info, setInfo] = useState<{ url: string; value: RemoteInfo } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    remoteInfo(item).then((value) => {
+      if (!cancelled) setInfo({ url: item.url, value });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [item]);
+  const value = info?.url === item.url ? info.value : null;
+  const duration = item.durationSec ?? value?.durationSec ?? null;
+  const parts = [
+    item.kind === 'hls' ? 'HLS' : (item.container ?? '不明').toUpperCase(),
+    duration ? formatDuration(duration) : null,
+    value?.sizeBytes ? `${value.estimated ? '約' : ''}${formatBytes(value.sizeBytes)}` : value ? null : '…',
+    hostOf(item.url),
+  ];
+  return (
+    <AppText variant="small" tone="secondary" numberOfLines={1}>
+      {parts.filter(Boolean).join('・')}
+    </AppText>
+  );
 }
 
 // ポスター画像があればそれを、無ければ（MP4 など iOS が読める形式なら）動画の1秒目から作る
