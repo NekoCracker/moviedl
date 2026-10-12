@@ -13,6 +13,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { migrateDbIfNeeded } from '@/db/schema';
 import { initAds } from '@/ads/download-ad';
+import { IncomingFiles } from '@/components/incoming-files';
 import { PlaybackProvider } from '@/player/playback';
 import { PaywallHost } from '@/premium/paywall';
 import { initPurchases } from '@/premium/purchases';
@@ -64,6 +65,7 @@ export default function RootLayout() {
         <ThemeProvider value={navigationTheme}>
           <StatusBar style="light" />
           <ResumeDownloads />
+          <IncomingFiles />
           <PlaybackProvider>
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
               <Stack.Screen name="(tabs)" />

@@ -44,6 +44,20 @@ export default function EditScreen() {
     }
   }, [mode, isPlaying, currentTime, selected.end, preview]);
 
+  const nudgeRange = (edge: 'start' | 'end', delta: number) => {
+    const next = { ...selected };
+    if (edge === 'start') next.start = Math.min(Math.max(0, round1(next.start + delta)), next.end - 1);
+    else next.end = Math.max(Math.min(duration, round1(next.end + delta)), next.start + 1);
+    setRange(next);
+    preview.pause();
+    preview.seek(edge === 'start' ? next.start : next.end);
+  };
+
+  const stepFrame = (direction: 1 | -1) => {
+    preview.pause();
+    preview.seek(Math.min(duration, Math.max(0, preview.getTime() + direction / 30)));
+  };
+
   const playRange = () => {
     if (isPlaying) {
       preview.pause();
@@ -151,19 +165,35 @@ export default function EditScreen() {
             />
             <View style={styles.rangeLabels}>
               <AppText variant="small" tone="secondary">
-                開始 {formatDuration(selected.start)}
+                開始 {formatTenths(selected.start)}
               </AppText>
               <AppText variant="small" tone="accent">
                 {formatDuration(selected.end - selected.start)}
               </AppText>
               <AppText variant="small" tone="secondary">
-                終了 {formatDuration(selected.end)}
+                終了 {formatTenths(selected.end)}
               </AppText>
+            </View>
+            {/* 0.1秒単位の微調整（feature-spec.md §2-16） */}
+            <View style={styles.nudgeRow}>
+              <NudgeButton label="−0.1" hint="開始を0.1秒前へ" onPress={() => nudgeRange('start', -0.1)} />
+              <NudgeButton label="+0.1" hint="開始を0.1秒後へ" onPress={() => nudgeRange('start', 0.1)} />
+              <View style={styles.nudgeGap} />
+              <NudgeButton label="−0.1" hint="終了を0.1秒前へ" onPress={() => nudgeRange('end', -0.1)} />
+              <NudgeButton label="+0.1" hint="終了を0.1秒後へ" onPress={() => nudgeRange('end', 0.1)} />
             </View>
           </>
         ) : (
           <>
             <Scrubber position={currentTime} duration={duration} onSeek={preview.seek} />
+            {/* 1コマずつ動かす（フレームレートは分からないので 1/30 秒刻み。feature-spec.md §2-17） */}
+            <View style={styles.nudgeRow}>
+              <NudgeButton label="前のコマ" hint="1コマ戻る" onPress={() => stepFrame(-1)} />
+              <AppText variant="small" tone="secondary" style={styles.nudgeTime}>
+                {formatTenths(currentTime)}
+              </AppText>
+              <NudgeButton label="次のコマ" hint="1コマ進む" onPress={() => stepFrame(1)} />
+            </View>
             <AppText variant="caption" tone="secondary" style={styles.hint}>
               バーを動かして、サムネイルにしたい場面で「決定」を押してください。
             </AppText>
@@ -178,6 +208,24 @@ export default function EditScreen() {
   );
 }
 
+function round1(t: number) {
+  return Math.round(t * 10) / 10;
+}
+
+// 1:23.4 の形（0.1秒まで）
+function formatTenths(t: number) {
+  const whole = Math.floor(t);
+  return `${formatDuration(whole)}.${Math.floor((t - whole) * 10)}`;
+}
+
+function NudgeButton({ label, hint, onPress }: { label: string; hint: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={hint} onPress={onPress} style={styles.nudge}>
+      <AppText variant="small">{label}</AppText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingTop: 8 },
@@ -189,6 +237,10 @@ const styles = StyleSheet.create({
   controls: { paddingHorizontal: 20, paddingTop: 20, gap: 12 },
   rangeLabels: { flexDirection: 'row', justifyContent: 'space-between' },
   hint: { lineHeight: 19 },
+  nudgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  nudgeGap: { flex: 1 },
+  nudgeTime: { flex: 1, textAlign: 'center' },
+  nudge: { minHeight: 44, minWidth: 56, paddingHorizontal: 12, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   play: { height: 48, borderRadius: radius.lg, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   disabled: { opacity: 0.4 },
 });

@@ -23,6 +23,64 @@
         "ITSAppUsesNonExemptEncryption": false,
         "BGTaskSchedulerPermittedIdentifiers": [
           "com.nekocracker.moviedl.convert.*"
+        ],
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "動画",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.movie",
+              "public.mpeg-4",
+              "com.apple.quicktime-movie",
+              "public.mpeg-2-transport-stream",
+              "public.avi",
+              "org.webmproject.webm",
+              "org.matroska.mkv"
+            ]
+          },
+          {
+            "CFBundleTypeName": "音声",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.audio",
+              "public.mp3",
+              "com.apple.m4a-audio"
+            ]
+          }
+        ],
+        "UTImportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "org.webmproject.webm",
+            "UTTypeDescription": "WebM",
+            "UTTypeConformsTo": [
+              "public.movie"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "webm"
+              ],
+              "public.mime-type": [
+                "video/webm"
+              ]
+            }
+          },
+          {
+            "UTTypeIdentifier": "org.matroska.mkv",
+            "UTTypeDescription": "Matroska",
+            "UTTypeConformsTo": [
+              "public.movie"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "mkv"
+              ],
+              "public.mime-type": [
+                "video/x-matroska"
+              ]
+            }
+          }
         ]
       }
     },

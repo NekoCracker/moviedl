@@ -130,6 +130,18 @@ public final class MediaToolsModule: Module {
       ConvertBackgroundTasks.shared.isSupported
     }
 
+    // ファイルアプリの「このアプリで開く」で渡された（保護付きの）ファイルを output にコピーする
+    AsyncFunction("copySecurityScoped") { (uri: String, output: String) in
+      guard let url = URL(string: uri) else {
+        throw Exception(name: "ERR_COPY", description: "ファイルを開けません")
+      }
+      let accessing = url.startAccessingSecurityScopedResource()
+      defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+      let dest = URL(fileURLWithPath: Self.path(from: output))
+      try? FileManager.default.removeItem(at: dest)
+      try FileManager.default.copyItem(at: url, to: dest)
+    }
+
     Function("excludeFromBackup") { (uri: String) in
       var url = URL(fileURLWithPath: Self.path(from: uri))
       var values = URLResourceValues()

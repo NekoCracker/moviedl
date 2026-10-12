@@ -144,9 +144,18 @@ export async function importFromFiles(db: SQLiteDatabase, folderId: number, pref
   });
   if (picked.canceled) return null;
 
+  return importFiles(db, folderId, picked.assets);
+}
+
+// 一時ファイル（キャッシュ内）をライブラリに移して登録する。ファイルピッカーと「このアプリで開く」で共通
+export async function importFiles(
+  db: SQLiteDatabase,
+  folderId: number,
+  assets: { uri: string; name: string; size?: number | null }[],
+): Promise<ImportResult> {
   let imported = 0;
   const skipped: string[] = [];
-  for (const [index, asset] of picked.assets.entries()) {
+  for (const [index, asset] of assets.entries()) {
     const ext = extensionOf(asset.name);
     const mediaType: MediaType | null = AUDIO_EXTENSIONS.includes(ext) ? 'audio' : VIDEO_EXTENSIONS.includes(ext) ? 'video' : null;
     if (!mediaType) {

@@ -48,6 +48,7 @@ declare class MediaToolsNative extends NativeModule<Events> {
   supportsContinuedProcessing(): boolean;
   deviceCondition(): DeviceCondition;
   excludeFromBackup(uri: string): void;
+  copySecurityScoped(uri: string, output: string): Promise<void>;
   clearWebsiteData(types: ('cache' | 'cookies')[], sinceMs: number | null): Promise<void>;
   websiteDataSize(): Promise<number>;
 }
