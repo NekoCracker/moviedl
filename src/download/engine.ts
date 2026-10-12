@@ -123,11 +123,11 @@ async function processJob(db: SQLiteDatabase, job: JobRow) {
   await setStatus(db, job.id, 'downloading');
   try {
     const result = job.kind === 'hls' ? await downloadHls(job) : await downloadFile(job);
-    const videoId = await registerMedia(db, job, result);
+    const { videoId, converting } = await registerMedia(db, job, result);
     await db.runAsync("UPDATE downloads SET status = 'done', progress = 1, video_id = ? WHERE id = ?", videoId, job.id);
     removeTempDirectory(job.id);
-    // 変換の通知は出さないので、続けて変換するもの（音声のみ・HLS）もここで知らせる
-    if ((await loadSettings(db)).downloadNotifications) {
+    // 続けて変換するもの（音声のみ・HLS）は、変換が終わって再生できるようになったときに知らせる
+    if (!converting && (await loadSettings(db)).downloadNotifications) {
       notifyFinished('ダウンロードが完了しました', job.title ?? '動画を保存しました');
     }
   } catch (e) {
@@ -292,7 +292,7 @@ async function downloadWithRetry(url: string, dest: File, job: JobRow): Promise<
   }
 }
 
-async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadResult): Promise<number> {
+async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadResult): Promise<{ videoId: number; converting: boolean }> {
   // 保存先のフォルダがダウンロード中に削除されていたら「未分類」へ
   const folder = job.folder_id
     ? await db.getFirstAsync<{ id: number }>('SELECT id FROM folders WHERE id = ?', job.folder_id)
@@ -320,7 +320,11 @@ async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadRe
   const conversion = job.output === 'm4a' || job.output === 'mp3' ? job.output : result.container === 'ts' ? 'mp4' : null;
   if (conversion) {
     // 「音声のみ」で保存したものは、音声を書き出したあと元の動画を消す
-    const params = conversion === 'mp4' ? {} : { removeSource: true, bitrate: (await loadSettings(db)).mp3Bitrate };
+    // fromDownload: 変換が終わったら「ダウンロードが完了しました」と通知する
+    const params =
+      conversion === 'mp4'
+        ? { fromDownload: true }
+        : { removeSource: true, fromDownload: true, bitrate: (await loadSettings(db)).mp3Bitrate };
     await db.runAsync(
       "INSERT INTO conversions (video_id, kind, params_json, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
       videoId,
@@ -330,7 +334,7 @@ async function registerMedia(db: SQLiteDatabase, job: JobRow, result: DownloadRe
     );
     runConversions(db);
   }
-  return videoId;
+  return { videoId, converting: conversion != null };
 }
 
 function guessContainer(url: string): string | null {

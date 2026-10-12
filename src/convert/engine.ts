@@ -8,6 +8,7 @@ import { Alert, AppState } from 'react-native';
 import { MediaTools, type ConvertMode, type ConvertOptions, type ProbeResult } from 'media-tools';
 
 import { getMediaByIds, nextManualOrder, type MediaItem } from '@/db/library';
+import { notifyFinished } from '@/notifications';
 import { loadSettings } from '@/db/settings';
 import { mediaFile } from '@/download/storage';
 import { notifyJobsChanged, setLiveProgress } from '@/download/store';
@@ -35,6 +36,8 @@ type Params = {
   replace?: boolean;
   // ダウンロード時に「音声のみ」を選んだもの。変換後に元の動画を消す
   removeSource?: boolean;
+  // ダウンロードに続けて自動で行う変換。終わったらダウンロード完了として通知する
+  fromDownload?: boolean;
 };
 
 const VIDEO_CHUNK_SEC = 30;
@@ -182,7 +185,10 @@ async function runOne(db: SQLiteDatabase, job: ConversionRow): Promise<'finished
     await finish(db, job, item, params, output);
     await db.runAsync("UPDATE conversions SET status = 'done', progress = 1, error = NULL WHERE id = ?", job.id);
     removeWorkDirectory(job.id);
-    // 変換の通知は出さない（2026-10-12 ユーザー判断）
+    // 変換そのものの通知は出さない。ダウンロードに続く変換なら、ここで「ダウンロード完了」を知らせる
+    if (params.fromDownload && (await loadSettings(db)).downloadNotifications) {
+      notifyFinished('ダウンロードが完了しました', item.title);
+    }
   } catch (e) {
     if (e instanceof StoppedError || stopRequest) {
       if (stopRequest === 'cancel') {
