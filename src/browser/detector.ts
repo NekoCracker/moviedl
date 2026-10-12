@@ -41,6 +41,38 @@ export const detectorScript = `
     return m ? m[1].toLowerCase() : null;
   }
 
+  // ポスター画像が無いときの代わり: ページ内の <video poster>、無ければ og:image / twitter:image
+  function pagePoster() {
+    try {
+      var v = document.querySelector('video[poster]');
+      if (v && v.getAttribute('poster')) { return v.getAttribute('poster'); }
+      var m = document.querySelector('meta[property="og:image"], meta[name="og:image"], meta[name="twitter:image"], meta[property="twitter:image"]');
+      return m && m.getAttribute('content');
+    } catch (e) { return null; }
+  }
+
+  var reported = {};
+
+  function send(media) {
+    post({ type: 'media-found', media: media });
+  }
+
+  // fetch/XHR で見つけた時点ではまだ DOM が無いことがあるので、あとでポスターを補う
+  function fillPosters() {
+    var p = pagePoster();
+    if (!p) { return; }
+    var abs = absolute(p);
+    for (var key in reported) {
+      var m = reported[key];
+      if (!m.poster && abs) {
+        m.poster = abs;
+        send(m);
+      }
+    }
+  }
+  document.addEventListener('DOMContentLoaded', fillPosters);
+  window.addEventListener('load', fillPosters);
+
   function report(rawUrl, contentType, poster) {
     if (!rawUrl || typeof rawUrl !== 'string') { return; }
     if (rawUrl.indexOf('blob:') === 0 || rawUrl.indexOf('data:') === 0) { return; }
@@ -55,21 +87,22 @@ export const detectorScript = `
     }
     if (!kind) { return; }
     seen[url] = true;
-    post({
-      type: 'media-found',
-      media: {
-        url: url,
-        kind: kind,
-        container: kind === 'hls' ? 'm3u8' : containerOf(url),
-        pageUrl: location.href,
-        pageTitle: document.title || location.hostname,
-        poster: poster ? absolute(poster) : null
-      }
-    });
+    var p = poster || pagePoster();
+    var media = {
+      url: url,
+      kind: kind,
+      container: kind === 'hls' ? 'm3u8' : containerOf(url),
+      pageUrl: location.href,
+      pageTitle: document.title || location.hostname,
+      poster: p ? absolute(p) : null
+    };
+    reported[url] = media;
+    send(media);
   }
 
   function scanMediaElement(el) {
     var poster = el.getAttribute && el.getAttribute('poster');
+    if (poster) { fillPosters(); }
     report(el.currentSrc || el.src, el.getAttribute && el.getAttribute('type'), poster);
     var sources = el.querySelectorAll ? el.querySelectorAll('source') : [];
     for (var i = 0; i < sources.length; i++) {

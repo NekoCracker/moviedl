@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
 import { useSQLiteContext } from 'expo-sqlite';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActionSheetIOS, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -78,13 +79,7 @@ export function DetectedSheet({
                 accessibilityState={{ selected: isSelected }}
                 onPress={() => setSelectedUrl(item.url)}
                 style={[styles.item, isSelected && styles.itemSelected]}>
-                <View style={[styles.thumb, { backgroundColor: placeholderTint(index) }]}>
-                  {item.poster ? (
-                    <Image source={{ uri: item.poster }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                  ) : (
-                    <SymbolView name={item.kind === 'hls' ? 'play.rectangle' : 'film'} tintColor="rgba(255,255,255,0.7)" size={18} />
-                  )}
-                </View>
+                <DetectedThumb item={item} index={index} />
                 <View style={styles.itemText}>
                   <AppText variant="bodyBold" numberOfLines={1}>
                     {item.pageTitle}
@@ -147,6 +142,38 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+// ポスター画像があればそれを、無ければ（MP4 など iOS が読める形式なら）動画の1秒目から作る
+function DetectedThumb({ item, index }: { item: DetectedMedia; index: number }) {
+  const [generated, setGenerated] = useState<{ url: string; uri: string } | null>(null);
+  const canGenerate = !item.poster && item.kind === 'file' && ['mp4', 'm4v', 'mov'].includes(item.container ?? '');
+
+  useEffect(() => {
+    if (!canGenerate) return;
+    let cancelled = false;
+    VideoThumbnails.getThumbnailAsync(item.url, { time: 1000, quality: 0.5, headers: { Referer: item.pageUrl } })
+      .then((r) => {
+        if (!cancelled) setGenerated({ url: item.url, uri: r.uri });
+      })
+      .catch(() => {
+        // 作れなければアイコンのまま
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canGenerate, item.url, item.pageUrl]);
+
+  const uri = item.poster ?? (generated?.url === item.url ? generated.uri : null);
+  return (
+    <View style={[styles.thumb, { backgroundColor: placeholderTint(index) }]}>
+      {uri ? (
+        <Image source={{ uri, headers: item.poster ? { Referer: item.pageUrl } : undefined }} style={StyleSheet.absoluteFill} contentFit="cover" />
+      ) : (
+        <SymbolView name={item.kind === 'hls' ? 'play.rectangle' : 'film'} tintColor="rgba(255,255,255,0.7)" size={18} />
+      )}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

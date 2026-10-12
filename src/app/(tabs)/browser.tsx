@@ -205,7 +205,12 @@ export default function BrowserScreen() {
       return;
     }
     const media = msg.media;
-    setDetected((prev) => (prev.some((m) => m.url === media.url) ? prev : [...prev, media]));
+    setDetected((prev) => {
+      const existing = prev.find((m) => m.url === media.url);
+      if (!existing) return [...prev, media];
+      // あとから届いたポスター画像だけ反映する
+      return !existing.poster && media.poster ? prev.map((m) => (m.url === media.url ? media : m)) : prev;
+    });
   };
 
   const toggleBookmark = () => {
